@@ -498,7 +498,11 @@ static int add_jump_destinations(struct objtool_file *file)
 		    insn->type != INSN_JUMP_UNCONDITIONAL)
 			continue;
 
+
 		if (insn->ignore)
+
+		if (insn->offset == FAKE_JUMP_OFFSET)
+
 			continue;
 
 		rela = find_rela_by_dest_range(insn->sec, insn->offset,
