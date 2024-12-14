@@ -1,5 +1,4 @@
-/* Copyright (c) 2002,2007-2017,2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+/* Copyright (c) 2002,2007-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -440,8 +439,7 @@ void kgsl_mmu_put_gpuaddr(struct kgsl_memdesc *memdesc)
 	if (memdesc->size == 0 || memdesc->gpuaddr == 0)
 		return;
 
-	if (!kgsl_memdesc_is_global(memdesc) &&
-		(KGSL_MEMDESC_MAPPED & memdesc->priv))
+	if (!kgsl_memdesc_is_global(memdesc))
 		unmap_fail = kgsl_mmu_unmap(pagetable, memdesc);
 
 	/*
@@ -452,16 +450,10 @@ void kgsl_mmu_put_gpuaddr(struct kgsl_memdesc *memdesc)
 	if (PT_OP_VALID(pagetable, put_gpuaddr) && (unmap_fail == 0))
 		pagetable->pt_ops->put_gpuaddr(memdesc);
 
-	memdesc->pagetable = NULL;
-
-	/*
-	 * If SVM tries to take a GPU address it will lose the race until the
-	 * gpuaddr returns to zero so we shouldn't need to worry about taking a
-	 * lock here
-	 */
 	if (!kgsl_memdesc_is_global(memdesc))
 		memdesc->gpuaddr = 0;
 
+	memdesc->pagetable = NULL;
 }
 EXPORT_SYMBOL(kgsl_mmu_put_gpuaddr);
 
@@ -614,11 +606,10 @@ enum kgsl_mmutype kgsl_mmu_get_mmutype(struct kgsl_device *device)
 EXPORT_SYMBOL(kgsl_mmu_get_mmutype);
 
 bool kgsl_mmu_gpuaddr_in_range(struct kgsl_pagetable *pagetable,
-		uint64_t gpuaddr, uint64_t size)
+		uint64_t gpuaddr)
 {
 	if (PT_OP_VALID(pagetable, addr_in_range))
-		return pagetable->pt_ops->addr_in_range(pagetable,
-				gpuaddr, size);
+		return pagetable->pt_ops->addr_in_range(pagetable, gpuaddr);
 
 	return false;
 }
@@ -654,7 +645,7 @@ EXPORT_SYMBOL(kgsl_mmu_get_qtimer_global_entry);
  */
 
 static bool nommu_gpuaddr_in_range(struct kgsl_pagetable *pagetable,
-		uint64_t gpuaddr, uint64_t size)
+		uint64_t gpuaddr)
 {
 	return (gpuaddr != 0) ? true : false;
 }
@@ -721,7 +712,6 @@ static struct kgsl_pagetable *nommu_getpagetable(struct kgsl_mmu *mmu,
 static int nommu_init(struct kgsl_mmu *mmu)
 {
 	mmu->features |= KGSL_MMU_GLOBAL_PAGETABLE;
-	set_bit(KGSL_MMU_STARTED, &mmu->flags);
 	return 0;
 }
 

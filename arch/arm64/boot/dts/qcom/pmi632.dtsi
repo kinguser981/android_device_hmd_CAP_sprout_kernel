@@ -189,6 +189,18 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 			#cooling-cells = <2>;
+			/*Add by xukai. 20191030. start*/
+			qcom,fcc-max-ua = <2000000>;//PMI current.
+                        qcom,fv-max-uv = <4400000>;
+                        qcom,dc-icl-ua = <2000000>;
+                        qcom,chg-term-src = <1>;
+                        qcom,chg-term-current-ma = <(-200)>;
+                        qcom,sw-jeita-enable;
+			/*Add by xukai. 20191030. end*/
+			/*Add by xukai. 20191018. start*/
+			qcom,hvdcp-disable = <1>;
+			qcom,usb-icl-ua = <2000000>;
+			/*Add by xukai. 20191018. end*/
 
 			qcom,pmic-revid = <&pmi632_revid>;
 			io-channels = <&pmi632_vadc ADC_USB_IN_V_16>,
@@ -353,6 +365,9 @@
 			#size-cells = <1>;
 
 			qcom,pmic-revid = <&pmi632_revid>;
+			/*Added by xukai. 20191121. start*/
+			qcom,vbatt-cutoff-mv = <3400>;
+			/*Added by xukai. 20191121. start*/
 			io-channels = <&pmi632_vadc ADC_BAT_THERM_PU2>,
 				      <&pmi632_vadc ADC_BAT_ID_PU2>;
 			io-channel-names = "batt-therm",

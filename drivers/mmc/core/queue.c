@@ -27,7 +27,6 @@
 #include "queue.h"
 #include "block.h"
 #include "core.h"
-#include "crypto.h"
 #include "card.h"
 
 /*
@@ -217,6 +216,8 @@ void mmc_cmdq_setup_queue(struct mmc_queue *mq, struct mmc_card *card)
 						host->max_req_size / 512));
 	blk_queue_max_segment_size(mq->queue, host->max_seg_size);
 	blk_queue_max_segments(mq->queue, host->max_segs);
+	if (host->inlinecrypt_support)
+		queue_flag_set_unlocked(QUEUE_FLAG_INLINECRYPT, mq->queue);
 }
 
 static struct scatterlist *mmc_alloc_sg(int sg_len, gfp_t gfp)
@@ -414,8 +415,7 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 		mq->queue = blk_alloc_queue(GFP_KERNEL);
 		if (!mq->queue)
 			return -ENOMEM;
-		if (lock)
-			mq->queue->queue_lock = lock;
+		mq->queue->queue_lock = lock;
 		mq->queue->request_fn = mmc_cmdq_dispatch_req;
 		mq->queue->init_rq_fn = mmc_init_request;
 		mq->queue->exit_rq_fn = mmc_exit_request;
@@ -438,9 +438,6 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 			/* hook for pm qos cmdq init */
 			if (card->host->cmdq_ops->init)
 				card->host->cmdq_ops->init(card->host);
-			if (host->cmdq_ops->cqe_crypto_update_queue)
-				host->cmdq_ops->cqe_crypto_update_queue(host,
-								mq->queue);
 			mq->thread = kthread_run(mmc_cmdq_thread, mq,
 						 "mmc-cmdqd/%d%s",
 						 host->index,
@@ -458,8 +455,7 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 	mq->queue = blk_alloc_queue(GFP_KERNEL);
 	if (!mq->queue)
 		return -ENOMEM;
-	if (lock)
-		mq->queue->queue_lock = lock;
+	mq->queue->queue_lock = lock;
 	mq->queue->request_fn = mmc_request_fn;
 	mq->queue->init_rq_fn = mmc_init_request;
 	mq->queue->exit_rq_fn = mmc_exit_request;
@@ -483,6 +479,8 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 		min(host->max_blk_count, host->max_req_size / 512));
 	blk_queue_max_segments(mq->queue, host->max_segs);
 	blk_queue_max_segment_size(mq->queue, host->max_seg_size);
+	if (host->inlinecrypt_support)
+		queue_flag_set_unlocked(QUEUE_FLAG_INLINECRYPT, mq->queue);
 
 	sema_init(&mq->thread_sem, 1);
 
@@ -494,7 +492,6 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 		goto cleanup_queue;
 	}
 
-	mmc_crypto_setup_queue(host, mq->queue);
 	return 0;
 
  cleanup_queue:
@@ -552,13 +549,15 @@ int mmc_queue_suspend(struct mmc_queue *mq, int wait)
 		if (wait) {
 
 			/*
-			 * After blk_cleanup_queue is called, wait for all
+			 * After blk_stop_queue is called, wait for all
 			 * active_reqs to complete.
 			 * Then wait for cmdq thread to exit before calling
 			 * cmdq shutdown to avoid race between issuing
 			 * requests and shutdown of cmdq.
 			 */
-			blk_cleanup_queue(q);
+			spin_lock_irqsave(q->queue_lock, flags);
+			blk_stop_queue(q);
+			spin_unlock_irqrestore(q->queue_lock, flags);
 
 			if (host->cmdq_ctx.active_reqs)
 				wait_for_completion(

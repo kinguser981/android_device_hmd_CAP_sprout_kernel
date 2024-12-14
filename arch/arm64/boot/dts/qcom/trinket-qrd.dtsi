@@ -33,23 +33,7 @@
 		#include "qg-batterydata-mlp356477-2800mah.dtsi"
 	};
 
-	fingerprint: fpc1020 {
-		compatible = "fpc,fpc1020";
-		interrupt-parent = <&tlmm>;
-		interrupts = <92 0>;
-		fpc,gpio_rst = <&tlmm 93 0>;
-		fpc,gpio_irq = <&tlmm 92 0>;
-		vcc_spi-supply = <&pm6125_l9>;
-		vdd_io-supply  = <&pm6125_l9>;
-		vdd_ana-supply = <&pm6125_l9>;
-		fpc,enable-on-boot;
-		pinctrl-names = "fpc1020_reset_reset",
-				"fpc1020_reset_active",
-				"fpc1020_irq_active";
-		pinctrl-0 = <&fpc_reset_low>;
-		pinctrl-1 = <&fpc_reset_high>;
-		pinctrl-2 = <&fpc_int_low>;
-	};
+
 };
 
 &pmi632_qg {
@@ -78,7 +62,7 @@
 	qcom,thermal-mitigation = <4200000 3500000 3000000
 			2500000 2000000 1500000 1000000 500000>;
 };
-
+/*
 &qupv3_se2_i2c {
 	status = "okay";
 
@@ -103,7 +87,7 @@
 		synaptics,y-flip;
 	};
 };
-
+*/
 &qupv3_se1_i2c {
 	status = "ok";
 	nq@28 {
@@ -354,17 +338,17 @@
 		"IN3_AUX", "AUX_OUT",
 		"TX SWR_ADC0", "ADC1_OUTPUT",
 		"TX SWR_ADC2", "ADC2_OUTPUT",
-		"WSA SRC0_INP", "SRC0",
-		"WSA_TX DEC0_INP", "TX DEC0 MUX",
-		"WSA_TX DEC1_INP", "TX DEC1 MUX",
+		//"WSA SRC0_INP", "SRC0",
+		//"WSA_TX DEC0_INP", "TX DEC0 MUX",
+		//"WSA_TX DEC1_INP", "TX DEC1 MUX",	//removed by wenhuilong @20191021 for M528 audio bringup
 		"RX_TX DEC0_INP", "TX DEC0 MUX",
 		"RX_TX DEC1_INP", "TX DEC1 MUX",
 		"RX_TX DEC2_INP", "TX DEC2 MUX",
 		"RX_TX DEC3_INP", "TX DEC3 MUX",
 		"SpkrLeft IN", "WSA_SPK1 OUT",
 		"WSA_SPK1 OUT", "VA_MCLK";
-		qcom,wsa-max-devs = <1>;
-		qcom,wsa-devs = <&wsa881x_0211>, <&wsa881x_0213>;
+		qcom,wsa-max-devs = <0>;	//modified by wenhuilong @20191021 for M528 audio bringup
+		//qcom,wsa-devs = <&wsa881x_0211>, <&wsa881x_0213>;	//removed by wenhuilong @20191021 for M528 audio bringup
 		qcom,wsa-aux-dev-prefix = "SpkrLeft", "SpkrLeft";
 		qcom,msm-mbhc-hphl-swh = <1>;
 		qcom,msm-mbhc-gnd-swh = <1>;

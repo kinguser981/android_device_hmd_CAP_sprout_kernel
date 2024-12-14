@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,7 +11,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/rwsem.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <media/v4l2-fh.h>
@@ -33,8 +32,6 @@
 
 static struct cam_req_mgr_device g_dev;
 struct kmem_cache *g_cam_req_mgr_timer_cachep;
-
-DECLARE_RWSEM(rwsem_lock);
 
 static int cam_media_device_setup(struct device *dev)
 {
@@ -101,27 +98,9 @@ static void cam_v4l2_device_cleanup(void)
 	g_dev.v4l2_dev = NULL;
 }
 
-void cam_req_mgr_rwsem_read_op(enum cam_subdev_rwsem lock)
-{
-	if (lock == CAM_SUBDEV_LOCK)
-		down_read(&rwsem_lock);
-	else if (lock == CAM_SUBDEV_UNLOCK)
-		up_read(&rwsem_lock);
-}
-
-static void cam_req_mgr_rwsem_write_op(enum cam_subdev_rwsem lock)
-{
-	if (lock == CAM_SUBDEV_LOCK)
-		down_write(&rwsem_lock);
-	else if (lock == CAM_SUBDEV_UNLOCK)
-		up_write(&rwsem_lock);
-}
-
 static int cam_req_mgr_open(struct file *filep)
 {
 	int rc;
-
-	cam_req_mgr_rwsem_write_op(CAM_SUBDEV_LOCK);
 
 	mutex_lock(&g_dev.cam_lock);
 
@@ -135,7 +114,7 @@ static int cam_req_mgr_open(struct file *filep)
 
 	/* return if already initialized before */
 	if (g_dev.open_cnt > 1) {
-		CAM_WARN(CAM_CRM, "Already opened", rc);
+		CAM_ERR(CAM_CRM, "Already opened", rc);
 		goto end;
 	}
 
@@ -151,14 +130,12 @@ static int cam_req_mgr_open(struct file *filep)
 	}
 
 	mutex_unlock(&g_dev.cam_lock);
-	cam_req_mgr_rwsem_write_op(CAM_SUBDEV_UNLOCK);
 	return rc;
 
 mem_mgr_init_fail:
 	v4l2_fh_release(filep);
 end:
 	mutex_unlock(&g_dev.cam_lock);
-	cam_req_mgr_rwsem_write_op(CAM_SUBDEV_UNLOCK);
 	return rc;
 }
 
@@ -184,13 +161,10 @@ static int cam_req_mgr_close(struct file *filep)
 	struct v4l2_fh *vfh = filep->private_data;
 	struct v4l2_subdev_fh *subdev_fh = to_v4l2_subdev_fh(vfh);
 
-	cam_req_mgr_rwsem_write_op(CAM_SUBDEV_LOCK);
-
 	mutex_lock(&g_dev.cam_lock);
 
 	if (g_dev.open_cnt <= 0) {
 		mutex_unlock(&g_dev.cam_lock);
-		cam_req_mgr_rwsem_write_op(CAM_SUBDEV_UNLOCK);
 		return -EINVAL;
 	}
 
@@ -223,8 +197,6 @@ static int cam_req_mgr_close(struct file *filep)
 	}
 
 	mutex_unlock(&g_dev.cam_lock);
-
-	cam_req_mgr_rwsem_write_op(CAM_SUBDEV_UNLOCK);
 
 	return 0;
 }
@@ -306,49 +278,26 @@ static long cam_private_ioctl(struct file *file, void *fh,
 		break;
 
 	case CAM_REQ_MGR_LINK: {
-		struct cam_req_mgr_ver_info ver_info;
+		struct cam_req_mgr_link_info link_info;
 
-		if (k_ioctl->size != sizeof(ver_info.u.link_info_v1))
+		if (k_ioctl->size != sizeof(link_info))
 			return -EINVAL;
 
-		if (copy_from_user(&ver_info.u.link_info_v1,
+		if (copy_from_user(&link_info,
 			u64_to_user_ptr(k_ioctl->handle),
 			sizeof(struct cam_req_mgr_link_info))) {
 			return -EFAULT;
 		}
-		ver_info.version = VERSION_1;
-		rc = cam_req_mgr_link(&ver_info);
+
+		rc = cam_req_mgr_link(&link_info);
 		if (!rc)
 			if (copy_to_user(
 				u64_to_user_ptr(k_ioctl->handle),
-				&ver_info.u.link_info_v1,
+				&link_info,
 				sizeof(struct cam_req_mgr_link_info)))
 				rc = -EFAULT;
 		}
 		break;
-
-	case CAM_REQ_MGR_LINK_V2: {
-			struct cam_req_mgr_ver_info ver_info;
-
-			if (k_ioctl->size != sizeof(ver_info.u.link_info_v2))
-				return -EINVAL;
-
-			if (copy_from_user(&ver_info.u.link_info_v2,
-				u64_to_user_ptr(k_ioctl->handle),
-				sizeof(struct cam_req_mgr_link_info_v2))) {
-				return -EFAULT;
-			}
-			ver_info.version = VERSION_2;
-			rc = cam_req_mgr_link_v2(&ver_info);
-			if (!rc)
-				if (copy_to_user(
-					u64_to_user_ptr(k_ioctl->handle),
-					&ver_info.u.link_info_v2,
-					sizeof(struct
-						cam_req_mgr_link_info_v2)))
-					rc = -EFAULT;
-			}
-			break;
 
 	case CAM_REQ_MGR_UNLINK: {
 		struct cam_req_mgr_unlink_info unlink_info;
@@ -511,31 +460,6 @@ static long cam_private_ioctl(struct file *file, void *fh,
 			rc = -EINVAL;
 		}
 		break;
-
-	case CAM_REQ_MGR_REQUEST_DUMP: {
-		struct cam_dump_req_cmd cmd;
-
-		if (k_ioctl->size != sizeof(cmd))
-			return -EINVAL;
-
-		if (copy_from_user(&cmd,
-			u64_to_user_ptr(k_ioctl->handle),
-			sizeof(struct cam_dump_req_cmd))) {
-			rc = -EFAULT;
-			break;
-		}
-
-		rc = cam_req_mgr_dump_request(&cmd);
-		if (!rc)
-			if (copy_to_user(
-				u64_to_user_ptr(k_ioctl->handle),
-				&cmd, sizeof(struct cam_dump_req_cmd))) {
-				rc = -EFAULT;
-				break;
-			}
-		}
-		break;
-
 	default:
 		return -ENOIOCTLCMD;
 	}
@@ -623,18 +547,6 @@ void cam_register_subdev_fops(struct v4l2_file_operations *fops)
 	*fops = v4l2_subdev_fops;
 }
 EXPORT_SYMBOL(cam_register_subdev_fops);
-
-bool cam_req_mgr_is_open(void)
-{
-	bool crm_status;
-
-	mutex_lock(&g_dev.cam_lock);
-	crm_status = g_dev.open_cnt ? true : false;
-	mutex_unlock(&g_dev.cam_lock);
-
-	return crm_status;
-}
-EXPORT_SYMBOL(cam_req_mgr_is_open);
 
 int cam_register_subdev(struct cam_subdev *csd)
 {
@@ -785,64 +697,6 @@ static const struct of_device_id cam_req_mgr_dt_match[] = {
 };
 MODULE_DEVICE_TABLE(of, cam_dt_match);
 
-static int cam_pm_suspend(struct device *pdev)
-{
-	struct v4l2_event event;
-
-	event.id = V4L_EVENT_CAM_REQ_MGR_S2R_SUSPEND;
-	event.type = V4L_EVENT_CAM_REQ_MGR_EVENT;
-	CAM_DBG(CAM_CRM, "Queue S2R suspend event");
-	v4l2_event_queue(g_dev.video, &event);
-	return 0;
-}
-
-static int cam_pm_resume(struct device *pdev)
-{
-	struct v4l2_event event;
-
-	event.id = V4L_EVENT_CAM_REQ_MGR_S2R_RESUME;
-	event.type = V4L_EVENT_CAM_REQ_MGR_EVENT;
-	CAM_DBG(CAM_CRM, "Queue S2R resume event");
-	v4l2_event_queue(g_dev.video, &event);
-	return 0;
-}
-
-static int cam_pm_freeze(struct device *pdev)
-{
-	CAM_DBG(CAM_CRM, "Freeze done for cam_req_mgr driver");
-	return 0;
-}
-
-static int cam_pm_restore(struct device *pdev)
-{
-	struct v4l2_event event;
-
-	event.id = V4L_EVENT_CAM_REQ_MGR_HIBERNATION_RESUME;
-	event.type = V4L_EVENT_CAM_REQ_MGR_EVENT;
-	CAM_DBG(CAM_CRM, "Queue hibernation restore event");
-	v4l2_event_queue(g_dev.video, &event);
-	return 0;
-}
-
-static int cam_pm_thaw(struct device *pdev)
-{
-	struct v4l2_event event;
-
-	event.id = V4L_EVENT_CAM_REQ_MGR_HIBERNATION_SUSPEND;
-	event.type = V4L_EVENT_CAM_REQ_MGR_EVENT;
-	CAM_DBG(CAM_CRM, "Queue hibernation thaw event");
-	v4l2_event_queue(g_dev.video, &event);
-	return 0;
-}
-
-static const struct dev_pm_ops cam_pm_ops = {
-	.suspend = &cam_pm_suspend,
-	.resume = &cam_pm_resume,
-	.freeze = &cam_pm_freeze,
-	.restore = &cam_pm_restore,
-	.thaw = &cam_pm_thaw,
-};
-
 static struct platform_driver cam_req_mgr_driver = {
 	.probe = cam_req_mgr_probe,
 	.remove = cam_req_mgr_remove,
@@ -851,7 +705,6 @@ static struct platform_driver cam_req_mgr_driver = {
 		.owner = THIS_MODULE,
 		.of_match_table = cam_req_mgr_dt_match,
 		.suppress_bind_attrs = true,
-		.pm = &cam_pm_ops,
 	},
 };
 

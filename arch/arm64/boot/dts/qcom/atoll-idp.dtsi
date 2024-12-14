@@ -14,8 +14,8 @@
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
 #include <dt-bindings/iio/qcom,spmi-vadc.h>
 #include <dt-bindings/input/input.h>
-#include "atoll-camera-sensor-idp.dtsi"
 #include "atoll-sde-display.dtsi"
+#include "atoll-camera-sensor-idp.dtsi"
 #include "sdmmagpie-thermal-overlay.dtsi"
 
 &soc {
@@ -281,12 +281,6 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <255>;
 	qcom,platform-te-gpio = <&tlmm 10 0>;
-	qcom,platform-reset-gpio = <&pm6150l_gpios 3 0>;
-};
-
-&dsi_sim_vid {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_no_labibb>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
 	qcom,platform-reset-gpio = <&pm6150l_gpios 3 0>;
 };
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,9 +13,8 @@
 #ifndef _NPU_COMMON_H
 #define _NPU_COMMON_H
 
-/* -------------------------------------------------------------------------
+/*
  * Includes
- * -------------------------------------------------------------------------
  */
 #include <asm/dma-iommu.h>
 #include <linux/cdev.h>
@@ -35,9 +34,8 @@
 
 #include "npu_mgr.h"
 
-/* -------------------------------------------------------------------------
+/*
  * Defines
- * -------------------------------------------------------------------------
  */
 #define NPU_MAX_MBOX_NUM	    4
 #define NPU_MBOX_LOW_PRI	    0
@@ -78,9 +76,8 @@ enum npu_power_level {
 #define NPU_DBG(fmt, args...)                           \
 	pr_debug("NPU_DBG: %s: %d " fmt, __func__,  __LINE__, ##args)
 
-/* -------------------------------------------------------------------------
+/*
  * Data Structures
- * -------------------------------------------------------------------------
  */
 struct npu_smmu_ctx {
 	int domain;
@@ -294,14 +291,22 @@ struct npu_device {
 	struct llcc_slice_desc *sys_cache;
 	uint32_t execute_v2_flag;
 	bool cxlimit_registered;
-	bool npu_dsp_sid_mapped;
 
 	uint32_t hw_version;
 };
 
+struct npu_kevent {
+	struct list_head list;
+	struct msm_npu_event evt;
+	uint64_t reserved[4];
+};
+
 struct npu_client {
 	struct npu_device *npu_dev;
+	wait_queue_head_t wait;
+
 	struct mutex list_lock;
+	struct list_head evt_list;
 	struct list_head mapped_buffer_list;
 };
 
@@ -313,9 +318,8 @@ struct ipcc_mbox_chan {
 	struct npu_device *npu_dev;
 };
 
-/* -------------------------------------------------------------------------
+/*
  * Function Prototypes
- * -------------------------------------------------------------------------
  */
 int npu_debugfs_init(struct npu_device *npu_dev);
 void npu_debugfs_deinit(struct npu_device *npu_dev);
@@ -339,6 +343,5 @@ void disable_fw(struct npu_device *npu_dev);
 int load_fw(struct npu_device *npu_dev);
 int unload_fw(struct npu_device *npu_dev);
 int npu_set_bw(struct npu_device *npu_dev, int new_ib, int new_ab);
-int npu_bridge_mbox_send_data(struct npu_host_ctx *host_ctx,
-	struct npu_mbox *mbox, void *data);
+int npu_process_kevent(struct npu_client *client, struct npu_kevent *kevt);
 #endif /* _NPU_COMMON_H */

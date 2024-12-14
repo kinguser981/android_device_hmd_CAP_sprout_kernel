@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -129,13 +129,12 @@ static struct pll_vco disp_cc_pll_vco[] = {
 };
 
 /* 576MHz configuration */
-static struct alpha_pll_config disp_cc_pll0_config = {
+static const struct alpha_pll_config disp_cc_pll0_config = {
 	.l = 0x1E,
 	.vco_val = 0x2 << 20,
 	.vco_mask = 0x3 << 20,
 	.main_output_mask = BIT(0),
 	.config_ctl_val = 0x4001055b,
-	.test_ctl_hi_val = 0x1,
 	.test_ctl_hi_mask = 0x1,
 };
 
@@ -144,13 +143,12 @@ static struct clk_alpha_pll disp_cc_pll0_out_main = {
 	.vco_table = disp_cc_pll_vco,
 	.num_vco = ARRAY_SIZE(disp_cc_pll_vco),
 	.flags = SUPPORTS_DYNAMIC_UPDATE,
-	.config = &disp_cc_pll0_config,
 	.clkr = {
 		.hw.init = &(struct clk_init_data){
 			.name = "disp_cc_pll0_out_main",
 			.parent_names = (const char *[]){ "bi_tcxo" },
 			.num_parents = 1,
-			.ops = &clk_alpha_pll_slew_ops,
+			.ops = &clk_alpha_pll_ops,
 			.vdd_class = &vdd_cx,
 			.num_rate_max = VDD_NUM,
 			.rate_max = (unsigned long[VDD_NUM]) {
@@ -270,7 +268,6 @@ static struct clk_rcg2 disp_cc_mdss_dp_link_clk_src = {
 	.hid_width = 5,
 	.parent_map = disp_cc_parent_map_0,
 	.freq_tbl = ftbl_disp_cc_mdss_dp_link_clk_src,
-	.enable_safe_config = true,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "disp_cc_mdss_dp_link_clk_src",
 		.parent_names = disp_cc_parent_names_0,
@@ -852,7 +849,7 @@ static int disp_cc_sm6150_probe(struct platform_device *pdev)
 	}
 
 	clk_alpha_pll_configure(&disp_cc_pll0_out_main, regmap,
-				disp_cc_pll0_out_main.config);
+				&disp_cc_pll0_config);
 
 	ret = qcom_cc_really_probe(pdev, &disp_cc_sm6150_desc, regmap);
 	if (ret) {

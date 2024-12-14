@@ -14,9 +14,6 @@
 &pcie_rc0 {
 	reg = <0 0 0 0 0>;
 
-	#address-cells = <3>;
-	#size-cells = <2>;
-
 	mhi_1: qcom,mhi@0 {
 		reg = <0 0 0 0 0 >;
 
@@ -35,9 +32,10 @@
 		mhi,max-channels = <110>;
 		mhi,timeout = <2000>;
 
+		#address-cells = <1>;
+		#size-cells = <0>;
+
 		mhi_channels {
-			#address-cells = <1>;
-			#size-cells = <0>;
 			mhi_chan@0 {
 				reg = <0>;
 				label = "LOOPBACK";
@@ -535,8 +533,6 @@
 		};
 
 		mhi_devices {
-			#address-cells = <1>;
-			#size-cells = <0>;
 			mhi_netdev_2: mhi_rmnet@0 {
 				reg = <0x0>;
 				mhi,chan = "IP_HW0";

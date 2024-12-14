@@ -104,6 +104,42 @@ config LEDS_LM3530
 	  controlled manually or using PWM input or using ambient
 	  light automatically.
 
+config LCD_I2C_BACKLIGHT
+	tristate "Backlight driver for TI LM3697"
+	depends on BACKLIGHT_CLASS_DEVICE
+	depends on I2C
+	help
+	  Say Y to enable the backlight driver for TI LM3697.
+	  Up to 3 backlight strings and 11 bit dimming is supported.
+	  PWM brightness control is also supported.
+
+config BACKLIGHT_KTD3136
+	tristate "Backlight driver for KTD3136"
+	depends on LCD_I2C_BACKLIGHT
+	default n
+	help
+	  Say Y to enable the backlight driver for KTD3136.
+	  Up to 3 backlight strings and 11 bit dimming is supported.
+	  PWM brightness control is also supported.
+
+config BACKLIGHT_LM3697
+	tristate "Backlight driver for TI LM3697"
+	depends on LCD_I2C_BACKLIGHT
+	default n
+	help
+	  Say Y to enable the backlight driver for TI LM3697.
+	  Up to 3 backlight strings and 11 bit dimming is supported.
+	  PWM brightness control is also supported.
+
+config BACKLIGHT_AW99703
+	tristate "Backlight driver for AWINIC AW99703"
+	depends on LCD_I2C_BACKLIGHT
+	default n
+	help
+	  Say Y to enable the backlight driver for AWINIC AW99703.
+	  Up to 3 backlight strings and 11 bit dimming is supported.
+	  PWM brightness control is also supported.
+
 config LEDS_LM3533
 	tristate "LED support for LM3533"
 	depends on LEDS_CLASS
@@ -659,15 +695,6 @@ config LEDS_IS31FL32XX
 	  Say Y here to include support for ISSI IS31FL32XX and Si-En SN32xx
 	  LED controllers. They are I2C devices with multiple constant-current
 	  channels, each with independent 256-level PWM control.
-
-config LEDS_QCOM_CLK
-	tristate "LED Support for cock controller based PWM drvier"
-	depends on OF && PINCTRL && LEDS_CLASS
-	help
-	  This option enables the driver for clock driven LED.
-	  This driver controls the duty cycle of clocks generated
-	  by Qualcomm Technologies, Inc Chipsets.
-	  It also configures the pinctrl to output the clock.
 
 comment "LED driver for blink(1) USB RGB LED is under Special HID drivers (HID_THINGM)"
 

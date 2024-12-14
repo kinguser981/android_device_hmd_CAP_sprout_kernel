@@ -1109,7 +1109,8 @@ static int qpnp_lpg_pwm_set_output_pattern(struct pwm_chip *pwm_chip,
 	struct pwm_device *pwm, struct pwm_output_pattern *output_pattern)
 {
 	struct qpnp_lpg_channel *lpg;
-	u64 period_ns, duty_ns, tmp;
+	//u64 period_ns, duty_ns, tmp;
+	u64 period_ns;
 	u32 *percentages;
 	int rc = 0, i;
 
@@ -1133,15 +1134,17 @@ static int qpnp_lpg_pwm_set_output_pattern(struct pwm_chip *pwm_chip,
 
 	period_ns = pwm_get_period_extend(pwm);
 	for (i = 0; i < output_pattern->num_entries; i++) {
+		/* by wufengfeng 20191209 for leds duty_pcts
 		duty_ns = output_pattern->duty_pattern[i];
 		if (duty_ns > period_ns) {
 			dev_err(lpg->chip->dev, "duty %lluns is larger than period %lluns\n",
 					duty_ns, period_ns);
 			goto err;
 		}
-		/* Translate the pattern in duty_ns to percentage */
+		//Translate the pattern in duty_ns to percentage
 		tmp = (u64)duty_ns * 100;
-		percentages[i] = (u32)div64_u64(tmp, period_ns);
+		percentages[i] = (u32)div64_u64(tmp, period_ns);*/
+		percentages[i] = output_pattern->duty_pattern[i];
 	}
 
 	rc = qpnp_lpg_set_lut_pattern(lpg, percentages,
@@ -1158,9 +1161,11 @@ static int qpnp_lpg_pwm_set_output_pattern(struct pwm_chip *pwm_chip,
 	lpg->ramp_config.hi_idx = lpg->ramp_config.lo_idx +
 				output_pattern->num_entries - 1;
 
+	/* by wufengfeng 20191209 for leds duty_pcts
 	tmp = (u64)output_pattern->cycles_per_duty * period_ns;
 	do_div(tmp, NSEC_PER_MSEC);
-	lpg->ramp_config.step_ms = (u16)tmp;
+	lpg->ramp_config.step_ms = (u16)tmp;*/
+	lpg->ramp_config.step_ms = output_pattern->cycles_per_duty;
 
 	rc = qpnp_lpg_set_ramp_config(lpg);
 	if (rc < 0)

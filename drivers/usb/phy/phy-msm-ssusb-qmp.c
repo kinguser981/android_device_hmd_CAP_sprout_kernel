@@ -28,6 +28,16 @@
 #include <linux/hrtimer.h>
 #include <soc/qcom/socinfo.h>
 
+/*Add by xukai. start. 20191223*/
+#include <linux/proc_fs.h>
+#include <linux/string.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
+/*Add by xukai. end. 20191223*/
+
 enum core_ldo_levels {
 	CORE_LEVEL_NONE = 0,
 	CORE_LEVEL_MIN,
@@ -383,6 +393,94 @@ static void msm_ssphy_qmp_setmode(struct msm_ssphy_qmp *phy, u32 mode)
 }
 
 
+/*Add by xukai. start. 20191223*/
+/*
+#define LC_TYPEC_DEBUG 1
+static int typecStatus;
+
+static int typeC_open(struct inode * inode, struct file * file)
+{
+	//printk(KERN_CRIT "---->%s---->\n", __func__);
+	return 0;
+}
+
+static int typeC_close(struct inode * inode, struct file * file)
+{
+	//printk(KERN_CRIT "---->%s---->\n", __func__);
+	return 0;
+}
+*/
+
+//static ssize_t typeC_read(struct file *file, char __user *buf, size_t size, loff_t *opps)
+//{
+/*
+	int type1 = 2;
+	int type2 = 3;
+	//printk(KERN_CRIT "---->%s---->\n", __func__);
+
+	switch(typecStatus){
+		case 2:
+			copy_to_user(buf, &type1, sizeof(int));
+		break;
+		case 3:
+			copy_to_user(buf, &type2, sizeof(int));
+		break;
+		default:
+			printk(KERN_CRIT "---->invalid typecStatus---->\n");
+	}
+*/
+//#if LC_TYPEC_DEBUG
+	//printk(KERN_CRIT "-------->%s buf =%s-------->\n", __func__, buf);
+//#endif
+	//return 0;
+//}
+/*
+static ssize_t typeC_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
+{
+	//printk(KERN_CRIT "---->%s---->\n", __func__);
+	return 0;
+}
+
+static const struct file_operations lcTypecType_fops={
+	.owner		= THIS_MODULE,
+	.open		= typeC_open,
+	.read		= typeC_read,
+	.write		= typeC_write,
+	.release	= typeC_close,
+};
+*/
+
+/*****************************************************************************/
+int typecStatus; //Add by xukai. 20200102
+#define LC_TYPEC_DEBUG 0
+static ssize_t lc_typec_r_show(struct class *class, struct class_attribute *attr, char *data)
+{       
+#if LC_TYPEC_DEBUG
+        printk(KERN_CRIT"####%s####\n", __func__);
+#endif
+        return sprintf(data, "%d\n", typecStatus);
+}
+static CLASS_ATTR_RO(lc_typec_r);
+
+static ssize_t lc_typec_w_store(struct class *class, struct class_attribute *attr, const char *buf, size_t len)
+{       
+        return len;
+}
+static CLASS_ATTR_WO(lc_typec_w);
+
+static struct attribute * lc_typec_class_attrs[] = {
+        &class_attr_lc_typec_r.attr,
+        &class_attr_lc_typec_w.attr,
+        NULL,
+};
+ATTRIBUTE_GROUPS(lc_typec_class);
+
+static struct class lc_typec_class = {
+        .name   = "lc_typec_status",
+        .owner  = THIS_MODULE,
+        .class_groups   = lc_typec_class_groups,
+};
+/*Add by xukai. end. 20191223*/
 static void usb_qmp_update_portselect_phymode(struct msm_ssphy_qmp *phy)
 {
 	int val;
@@ -393,6 +491,14 @@ static void usb_qmp_update_portselect_phymode(struct msm_ssphy_qmp *phy)
 		val = SW_PORTSELECT_MX;
 	else if (phy->phy.flags & PHY_LANE_B)
 		val = SW_PORTSELECT | SW_PORTSELECT_MX;
+	/*Add by xukai. start. 20191223*/
+
+#if LC_TYPEC_DEBUG
+	printk(KERN_CRIT "-------->type C type value %d-------->\n", val);
+#endif
+	typecStatus = val;
+
+	/*Add by xukai. end. 20191223*/
 
 	/* PHY must be powered up before updating portselect and phymode. */
 	usb_qmp_powerup_phy(phy);
@@ -1041,6 +1147,29 @@ static int msm_ssphy_qmp_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct resource *res;
 	int ret = 0, size = 0, len;
+	/*Add by xukai. start. 20191223*/
+	int err;
+/*
+	struct proc_dir_entry * file;	
+	
+	file = proc_create("lcTypecType", 0666, NULL, &lcTypecType_fops);
+	if(!file){
+		printk(KERN_CRIT "---->proc %s fail---->\n", __func__);
+		//return -1;
+	} else {
+#if LC_TYPEC_DEBUG
+		printk(KERN_CRIT "---->proc %s success---->\n", __func__);
+#endif
+	}
+*/
+	/***************************************************************/
+	err = class_register(&lc_typec_class);
+        if (err < 0){
+                printk(KERN_CRIT "------%s------class register fail------\n", __func__);
+                //return err;
+        }
+		
+	/*Add by xukai. end. 20191223*/
 
 	phy = devm_kzalloc(dev, sizeof(*phy), GFP_KERNEL);
 	if (!phy)
@@ -1260,6 +1389,7 @@ static int msm_ssphy_qmp_probe(struct platform_device *pdev)
 		goto err;
 
 	ret = usb_add_phy_dev(&phy->phy);
+	
 
 err:
 	return ret;

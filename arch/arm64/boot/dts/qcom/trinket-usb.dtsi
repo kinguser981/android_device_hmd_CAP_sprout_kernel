@@ -67,13 +67,13 @@
 
 			/*  nominal vote */
 			<MSM_BUS_MASTER_USB3
-				MSM_BUS_SLAVE_EBI_CH0 240000 700000>,
+				MSM_BUS_SLAVE_EBI_CH0 800000 800000>,
 			<MSM_BUS_MASTER_USB3 MSM_BUS_SLAVE_IPA_CFG 0 2400>,
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_USB3 0 40000>,
 
 			/*  svs vote */
 			<MSM_BUS_MASTER_USB3
-				MSM_BUS_SLAVE_EBI_CH0 240000 700000>,
+				MSM_BUS_SLAVE_EBI_CH0 800000 800000>,
 			<MSM_BUS_MASTER_USB3 MSM_BUS_SLAVE_IPA_CFG 0 2400>,
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_USB3 0 40000>,
 
@@ -147,8 +147,9 @@
 		qcom,vdd-voltage-level = <0 925000 970000>;
 		qcom,tune2-efuse-bit-pos = <25>;
 		qcom,tune2-efuse-num-bits = <4>;
+		qcom,tune2-efuse-correction = <(-10)>;/*Add by xukai. For NHK_M528_A12-103. 20200108.*/
 		qcom,qusb-phy-init-seq = <0xf8 0x80
-					0xb3 0x84
+					0xb3 0x04
 					0x81 0x88
 					0xc0 0x8c
 					0x30 0x08

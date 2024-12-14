@@ -335,6 +335,9 @@ struct device_node *of_batterydata_get_best_profile(
 			id_range_pct = 0;
 		} else {
 			pr_err("failed to read battery id range\n");
+			/*Add by xukai. 20191019. start.*/
+			printk("WILLIAM failed to read battery id range\n");
+			/*Add by xukai. 20191019. end.*/
 			return ERR_PTR(-ENXIO);
 		}
 	}
@@ -344,6 +347,9 @@ struct device_node *of_batterydata_get_best_profile(
 	 */
 	for_each_child_of_node(batterydata_container_node, node) {
 		if (batt_type != NULL) {
+			/*Add by xukai. 20191019. start.*/
+			printk("WILLIAM begin to read battery type\n");
+			/*Add by xukai. 20191019. end.*/
 			rc = of_property_read_string(node, "qcom,battery-type",
 							&battery_type);
 			if (!rc && strcmp(battery_type, batt_type) == 0) {
@@ -378,6 +384,19 @@ struct device_node *of_batterydata_get_best_profile(
 
 	if (best_node == NULL) {
 		pr_err("No battery data found\n");
+		/*Add by xukai. 20191019. start*/
+		printk("WILLIAM No battery data found\n");
+                for_each_child_of_node(batterydata_container_node, node) {
+                       rc = of_property_read_string(node, "qcom,battery-type", &battery_type
+);
+		       printk("WILLIAM: battery type %s\n", battery_type);
+                       if (!rc && strcmp(battery_type,"default_config") == 0) {
+				printk("WILLIAM: %s success to get default config.\n", __func__);
+                       		best_node = node;
+                       		break;
+                       }
+                }
+		/*Add by xukai. 20191019. end*/
 		return best_node;
 	}
 

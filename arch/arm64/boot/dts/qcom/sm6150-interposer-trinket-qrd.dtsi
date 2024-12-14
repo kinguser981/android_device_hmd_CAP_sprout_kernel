@@ -157,7 +157,7 @@
 		pinctrl-2 = <&ts_release>;
 		synaptics,irq-gpio = <&tlmm 89 0x2008>;
 		synaptics,irq-on-state = <0>;
-		synaptics,reset-gpio = <&tlmm 88 0x00>;
+/*		synaptics,reset-gpio = <&tlmm 88 0x00>;*/
 		synaptics,reset-on-state = <0>;
 		synaptics,reset-active-ms = <20>;
 		synaptics,reset-delay-ms = <200>;

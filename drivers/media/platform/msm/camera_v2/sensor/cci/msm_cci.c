@@ -32,7 +32,7 @@
 #define CYCLES_PER_MICRO_SEC_DEFAULT 4915
 #define CCI_MAX_DELAY 1000000
 
-#define CCI_TIMEOUT msecs_to_jiffies(500)
+#define CCI_TIMEOUT msecs_to_jiffies(1000)  //ugrec_tky 500
 
 /* TODO move this somewhere else */
 #define MSM_CCI_DRV_NAME "msm_cci"
@@ -1330,7 +1330,8 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 		pr_err("%s: failed to vote for AHB\n", __func__);
 		return rc;
 	}
-
+	master = c_ctrl->cci_info->cci_i2c_master; //add this line 
+	
 	if (cci_dev->ref_count++) {
 		CDBG("%s ref_count %d\n", __func__, cci_dev->ref_count);
 		master = c_ctrl->cci_info->cci_i2c_master;

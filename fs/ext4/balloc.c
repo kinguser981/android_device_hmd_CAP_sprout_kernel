@@ -280,7 +280,6 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block *sb,
 	ext4_group_t ngroups = ext4_get_groups_count(sb);
 	struct ext4_group_desc *desc;
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
-	struct buffer_head *bh_p;
 
 	if (block_group >= ngroups) {
 		ext4_error(sb, "block_group >= groups_count - block_group = %u,"
@@ -291,14 +290,7 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block *sb,
 
 	group_desc = block_group >> EXT4_DESC_PER_BLOCK_BITS(sb);
 	offset = block_group & (EXT4_DESC_PER_BLOCK(sb) - 1);
-	bh_p = sbi_array_rcu_deref(sbi, s_group_desc, group_desc);
-	/*
-	 * sbi_array_rcu_deref returns with rcu unlocked, this is ok since
-	 * the pointer being dereferenced won't be dereferenced again. By
-	 * looking at the usage in add_new_gdb() the value isn't modified,
-	 * just the pointer, and so it remains valid.
-	 */
-	if (!bh_p) {
+	if (!sbi->s_group_desc[group_desc]) {
 		ext4_error(sb, "Group descriptor not loaded - "
 			   "block_group = %u, group_desc = %u, desc = %u",
 			   block_group, group_desc, offset);
@@ -306,10 +298,10 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block *sb,
 	}
 
 	desc = (struct ext4_group_desc *)(
-		(__u8 *)bh_p->b_data +
+		(__u8 *)sbi->s_group_desc[group_desc]->b_data +
 		offset * EXT4_DESC_SIZE(sb));
 	if (bh)
-		*bh = bh_p;
+		*bh = sbi->s_group_desc[group_desc];
 	return desc;
 }
 
@@ -554,19 +546,100 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 	return bh;
 }
 
-/**
- * ext4_has_free_clusters()
- * @sbi:	in-core super block structure.
- * @nclusters:	number of needed blocks
- * @flags:	flags from ext4_mb_new_blocks()
- *
- * Check if filesystem has nclusters free & available for allocation.
- * On success return 1, return 0 on failure.
- */
-static int ext4_has_free_clusters(struct ext4_sb_info *sbi,
-				  s64 nclusters, unsigned int flags)
+//@{ Lct.DamonHuang,20191205,add for CAP-764 bigen.
+#if DATA_PARTITION_PROTECT_ENABLE
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,18,0)
+static int has_free_blocks(s64 free_blocks, s64 dirty_blocks, s64 resv_blocks)
+{
+	//pr_err("has_free_blocks: comm:%s, group_leader:%s\n", current->comm,current->group_leader->comm);
+	/* Low limited value:150M exclude the dirty blocks */
+	if((free_blocks - dirty_blocks - resv_blocks) < 75000) {
+		/*limit some system process like adbd...*/
+		if(current->cred->uid.val <= 10000
+		   && !strcmp(current->group_leader->comm, "adbd")
+		) {
+			return 0;
+		}
+		/*pass some system app process*/
+		if(current->cred->uid.val > 10000) {
+			if(strstr(current->group_leader->comm, "android.phone")
+			   || strstr(current->group_leader->comm, "systemui")
+			   || strstr(current->group_leader->comm, "process.media")
+			   || strstr(current->group_leader->comm, "process.acore")
+			   || strstr(current->group_leader->comm, "launcher")
+			   || strstr(current->group_leader->comm, "com.android.mms")
+			   || strstr(current->group_leader->comm, "android.setting")
+			   || strstr(current->group_leader->comm, "dex2oat")
+			   || strstr(current->group_leader->comm, "gms.persistent")
+			   || strstr(current->group_leader->comm, "android.dialer")
+			   || strstr(current->group_leader->comm, "apps.messaging")
+			   || strstr(current->group_leader->comm, "android.talk")
+			   || strstr(current->group_leader->comm, "android.gms")
+			   || strstr(current->group_leader->comm, "roid.calendar")
+			   || strstr(current->group_leader->comm, "apps.photos")
+			   || strstr(current->group_leader->comm, "android.ims")
+			   || strstr(current->group_leader->comm, "roid.calculator")
+			   || strstr(current->group_leader->comm, "obile.assistant")
+			   || strstr(current->group_leader->comm, "o.tablet.master")
+			   || strstr(current->group_leader->comm, "azon.speech.sim")
+			   || strstr(current->group_leader->comm, "amazon.dee.app")
+			   || strstr(current->group_leader->comm, "droid.bluetooth")
+			){
+				return 1;
+			} else {
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+#else
+static int has_free_blocks(s64 free_blocks, s64 dirty_blocks)
+{
+	//pr_err("has_free_blocks: comm:%s, group_leader:%s\n", current->comm,current->group_leader->comm);
+	/* Low limited value:150M exclude the dirty blocks */
+	if((free_blocks - dirty_blocks) < 50000) {
+		/*limit some system process like adbd...*/
+		if(current->cred->uid.val <= 10000
+		   && !strcmp(current->group_leader->comm, "adbd")
+		) {
+			return 0;
+		}
+		/*pass some system app process*/
+		if(current->cred->uid.val > 10000) {
+			if(strstr(current->group_leader->comm, "android.phone")
+			   || strstr(current->group_leader->comm, "systemui")
+			   || strstr(current->group_leader->comm, "process.media")
+			   || strstr(current->group_leader->comm, "process.acore")
+			   || strstr(current->group_leader->comm, "launcher")
+			   || strstr(current->group_leader->comm, "com.android.mms")
+			   || strstr(current->group_leader->comm, "android.setting")
+			   || strstr(current->group_leader->comm, "dex2oat")
+			   || strstr(current->group_leader->comm, "gms.persistent")
+			   || strstr(current->group_leader->comm, "android.dialer")
+			   || strstr(current->group_leader->comm, "apps.messaging")
+			   || strstr(current->group_leader->comm, "android.talk")
+			   || strstr(current->group_leader->comm, "android.gms")
+			   || strstr(current->group_leader->comm, "roid.calendar")
+			   || strstr(current->group_leader->comm, "apps.photos")
+			   || strstr(current->group_leader->comm, "android.ims")
+			   || strstr(current->group_leader->comm, "roid.calculator")
+			   || strstr(current->group_leader->comm, "obile.assistant")
+			){
+				return 1;
+			} else {
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+#endif
+#else
+int cust_ext4_has_free_clusters(struct super_block* sb)
 {
 	s64 free_clusters, dirty_clusters, rsv, resv_clusters;
+	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct percpu_counter *fcc = &sbi->s_freeclusters_counter;
 	struct percpu_counter *dcc = &sbi->s_dirtyclusters_counter;
 
@@ -581,11 +654,97 @@ static int ext4_has_free_clusters(struct ext4_sb_info *sbi,
 	rsv = (ext4_r_blocks_count(sbi->s_es) >> sbi->s_cluster_bits) +
 	      resv_clusters;
 
+	if (free_clusters - (rsv + dirty_clusters) <
+					EXT4_FREECLUSTERS_WATERMARK) {
+		free_clusters  = percpu_counter_sum_positive(fcc);
+		dirty_clusters = percpu_counter_sum_positive(dcc);
+	}
+
+	if((free_clusters - dirty_clusters) < 50000) {
+	  pr_err("cust_ext4_has_free_clusters: no free block for (UID:%d, CMD:%s)\n", current->cred->uid.val, current->group_leader->comm);
+	  return 0;
+	}
+
+	return 1;
+}
+EXPORT_SYMBOL(cust_ext4_has_free_clusters);
+#endif
+//@} end.
+
+/**
+ * ext4_has_free_clusters()
+ * @sbi:	in-core super block structure.
+ * @nclusters:	number of needed blocks
+ * @flags:	flags from ext4_mb_new_blocks()
+ *
+ * Check if filesystem has nclusters free & available for allocation.
+ * On success return 1, return 0 on failure.
+ */
+static int ext4_has_free_clusters(struct ext4_sb_info *sbi,
+				  s64 nclusters, unsigned int flags)
+{
+	s64 free_clusters, dirty_clusters, rsv, resv_clusters;
+	
+//@{ Lct.DamonHuang,20191205,add for CAP-764 bigen.	
+#if 0 //DATA_PARTITION_PROTECT_ENABLE
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,18,0)
+	s64 cust_free_clusters, cust_dirty_clusters;
+#endif
+#endif
+//@} end.
+
+	struct percpu_counter *fcc = &sbi->s_freeclusters_counter;
+	struct percpu_counter *dcc = &sbi->s_dirtyclusters_counter;
+
+	free_clusters  = percpu_counter_read_positive(fcc);
+	dirty_clusters = percpu_counter_read_positive(dcc);
+	resv_clusters = atomic64_read(&sbi->s_resv_clusters);
+	
+//@{ Lct.DamonHuang,20191205,add for CAP-764 bigen.
+#if 0 //DATA_PARTITION_PROTECT_ENABLE
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,18,0)
+	cust_free_clusters = free_clusters;
+	cust_dirty_clusters = dirty_clusters;
+#endif
+#endif
+//@} end.
+
+	/*
+	 * r_blocks_count should always be multiple of the cluster ratio so
+	 * we are safe to do a plane bit shift only.
+	 */
+	rsv = (ext4_r_blocks_count(sbi->s_es) >> sbi->s_cluster_bits) +
+	      resv_clusters;
+
 	if (free_clusters - (nclusters + rsv + dirty_clusters) <
 					EXT4_FREECLUSTERS_WATERMARK) {
 		free_clusters  = percpu_counter_sum_positive(fcc);
 		dirty_clusters = percpu_counter_sum_positive(dcc);
 	}
+
+//@{ Lct.DamonHuang,20191205,add for CAP-764 bigen.
+#if DATA_PARTITION_PROTECT_ENABLE
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,18,0)
+        //pr_err("ext4 block info(%lld, %lld, %lld)\n", free_clusters, dirty_clusters, resv_clusters);
+	if(sb_any_quota_loaded(sbi->s_sb) > 0
+           && sbi->s_groups_count >= 5
+           && has_free_blocks(free_clusters, dirty_clusters, resv_clusters) == 0) {
+	    //pr_err("ext4_has_free_clusters: %lld, %lld, %u\n", free_clusters, dirty_clusters, sbi->s_groups_count);
+	    pr_err("ext4 no free block for (UID:%d, CMD:%s)\n", current->cred->uid.val, current->group_leader->comm);
+	    return 0;
+	}
+#else
+	if(sb_any_quota_loaded(sbi->s_sb) > 0
+           && sbi->s_groups_count >= 5
+           && has_free_blocks(free_clusters, dirty_clusters) == 0) {
+	    //pr_err("ext4_has_free_clusters: %lld, %lld, %u\n", free_clusters, dirty_clusters, sbi->s_groups_count);
+	    pr_err("ext4_has_free_clusters: no free block for (UID:%d, CMD:%s)\n", current->cred->uid.val, current->group_leader->comm);
+	    return 0;
+	}
+#endif
+#endif
+//@} end.
+
 	/* Check whether we have space after accounting for current
 	 * dirty clusters & root reserved clusters.
 	 */

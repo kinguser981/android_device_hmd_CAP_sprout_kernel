@@ -26,9 +26,14 @@
 &soc {
 	mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
-		#include "qg-batterydata-ascent-3450mah.dtsi"
-		#include "qg-batterydata-mlp356477-2800mah.dtsi"
+		#include "qg-batterydata-atl-4000mah.dtsi"
 	};
+	/*Add by xukai. 20191111. start*/
+	gpio_ctl {
+		compatible = "longcheer,gpio_ctl";
+		linux,usb-protect = <&pmi632_gpios 8 0>;
+	};
+	/*Add by xukai. 20191111. end*/
 };
 
 &pm6125_vadc {
@@ -77,7 +82,7 @@
 
 &qupv3_se1_i2c {
 	status = "ok";
-	nq@28 {
+/*	nq@28 {
 		compatible = "qcom,nq-nci";
 		reg = <0x28>;
 		qcom,nq-irq = <&tlmm 85 0x00>;
@@ -92,6 +97,35 @@
 				&nfc_clk_req_active>;
 		pinctrl-1 = <&nfc_int_suspend &nfc_enable_suspend
 				&nfc_clk_req_suspend>;
+	};*/
+	led-controller@36 {
+		compatible = "lct,lcdbl_i2c";
+		reg = <0x36>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-pull-up;
+	};
+};
+
+
+&qupv3_se3_i2c {
+	status = "ok";
+	sec-nfc@27 {
+		compatible = "sec-nfc";
+		reg = <0x27>;
+		sec-nfc,irq-gpio = <&tlmm 85 0x00>;
+		sec-nfc,ven-gpio = <&tlmm 83 0x00>;
+		sec-nfc,firm-gpio = <&tlmm 84 0x00>;
+		sec-nfc,clk_req-gpio = <&tlmm 95 0x00>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <85 0>;
+		interrupt-names = "nfc_irq";
+		pinctrl-names = "nfc_active", "nfc_suspend";
+		pinctrl-0 = <&nfc_int_active &nfc_enable_active
+				&nfc_clk_req_active>;
+		pinctrl-1 = <&nfc_int_suspend &nfc_enable_suspend
+				&nfc_clk_req_suspend>;
+
 	};
 };
 
@@ -128,7 +162,7 @@
 	pinctrl-0 = <&sdc2_clk_on  &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
 	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
 
-	cd-gpios = <&tlmm 98 GPIO_ACTIVE_LOW>;
+	cd-gpios = <&tlmm 98 GPIO_ACTIVE_HIGH>;
 
 	status = "ok";
 };
@@ -136,6 +170,9 @@
 &pmi632_qg {
 	qcom,battery-data = <&mtp_batterydata>;
 	qcom,qg-iterm-ma = <100>;
+	/*Added by xukai. 20191121. start*/
+        qcom,vbatt-cutoff-mv = <3400>;
+        /*Added by xukai. 20191121. start*/
 	qcom,hold-soc-while-full;
 	qcom,linearize-soc;
 	qcom,qg-use-s7-ocv;
@@ -157,18 +194,21 @@
 	qcom,hw-connector-mitigation;
 	qcom,connector-internal-pull-kohm = <100>;
 	qcom,float-option = <1>;
-	qcom,thermal-mitigation = <3000000 2500000
-			2000000 1500000 1000000 500000>;
+	/* Modify by xukai. 20191114. start*/
+	qcom,thermal-mitigation = <2000000 1500000 1000000 800000 500000 200000>;
+	/* Modify by xukai. 20191114. end*/
 };
 
 &usb0 {
 	extcon = <&pmi632_charger>, <&eud>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&fpid_gpio_default>;
 };
 
 &pmi632_gpios {
 	smb_en {
 		smb_en_default: smb_en_default {
-			pins = "gpio2";
+			pins = "gpio2", "gpio8"; /*Modify by xukai. 20191113.*/
 			function = "func1";
 			output-enable;
 		};
@@ -177,9 +217,9 @@
 	pmi632_sense {
 		/* GPIO 7 and 8 are external-sense pins for PMI632 */
 		pmi632_sense_default: pmi632_sense_default {
-			pins = "gpio7", "gpio8";
-			bias-high-impedance;	/* disable the GPIO */
-			bias-disable;		/* no-pull */
+			pins = "gpio7"; 	/*Modify by xukai. 20191113*/
+			bias-high-impedance;	 /*disable the GPIO */
+			bias-disable;		 /*no-pull */
 		};
 	};
 
@@ -211,7 +251,17 @@
 		label = "gpio-keys";
 
 		pinctrl-names = "default";
-		pinctrl-0 = <&key_vol_up_default>;
+		pinctrl-0 = <&key_vol_up_default &gpio_key_active>;
+		
+		google_key {
+			label = "google_key";
+			gpios = <&tlmm 94 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <0x210>;
+			linux,can-disable;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
 
 		vol_up {
 			label = "volume_up";
@@ -222,6 +272,42 @@
 			debounce-interval = <15>;
 			gpio-key,wakeup;
 		};
+	};
+        silead_fp {
+                compatible = "qcom,silead_fp";
+                qcom,qup-id = <7>;
+                spi-max-frequency = <4800000>;
+                reg = <0>;
+                interrupt-parent = <&tlmm>;
+                interrupts = <92 0x0>;
+                /*avdd-supply =<&pm6125_l9>;
+                vddio-supply =<&pm6125_l9>;
+                avdd-gpios =<&tlmm 16 0x1>;
+                vddio-gpios =<&tlmm 17 0x1>;*/
+                rst-gpios = <&tlmm 93 0x0>;
+                irq-gpios = <&tlmm 92 0x0>;
+                avdd-gpios = <&tlmm 24 0x0>;
+	            pinctrl-0 = <&fp_gpio_125>;
+        };
+	ant_check {
+		compatible = "ant_check";
+	        ant_check_gpio = <&tlmm 128 0x0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ant_check_default>;
+	};
+
+};
+&soc {
+	cdfinger_fingerprint {
+        compatible = "cdfinger,fingerprint";
+		interrupt-parent = <&tlmm>;
+		interrupts = <92 0x0>;
+		vcc_spi-supply = <&pm6125_l9>;
+		vdd_ana-supply = <&pm6125_l9>;
+		vdd_io-supply  = <&pm6125_l9>;
+		cdfinger,reset_gpio = <&tlmm 93 0>;
+		cdfinger,irq_gpio = <&tlmm 92 0>;
+        	cdfinger,pwr_gpio = <&tlmm 24 0>;
 	};
 };
 
@@ -288,6 +374,7 @@
 	status = "ok";
 };
 
+
 &dsi_td4330_truly_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
@@ -339,45 +426,3 @@
 	qcom,platform-bklight-en-gpio = <&pmi632_gpios 6 0>;
 };
 
-&qupv3_se2_i2c {
-	status = "okay";
-	qcom,i2c-touch-active="synaptics,tcm-i2c";
-
-	synaptics_tcm@20 {
-		compatible = "synaptics,tcm-i2c";
-		reg = <0x20>;
-		interrupt-parent = <&tlmm>;
-		interrupts = <88 0x2008>;
-		pinctrl-names = "pmx_ts_active","pmx_ts_suspend",
-					"pmx_ts_release";
-		pinctrl-0 = <&ts_int_active &ts_reset_active>;
-		pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
-		pinctrl-2 = <&ts_release>;
-		synaptics,irq-gpio = <&tlmm 88 0x2008>;
-		synaptics,irq-on-state = <0>;
-		synaptics,reset-gpio = <&tlmm 87 0x00>;
-		synaptics,reset-on-state = <0>;
-		synaptics,reset-active-ms = <20>;
-		synaptics,reset-delay-ms = <200>;
-		synaptics,power-delay-ms = <200>;
-		synaptics,ubl-i2c-addr = <0x20>;
-		synaptics,y-flip;
-	};
-
-	himax_ts@48 {
-		compatible = "himax,hxcommon";
-		reg = <0x48>;
-		interrupt-parent = <&tlmm>;
-		interrupts = <88 0x2008>;
-		pinctrl-names = "pmx_ts_active","pmx_ts_suspend",
-			"pmx_ts_release";
-		pinctrl-0 = <&ts_int_active &ts_reset_active>;
-		pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
-		pinctrl-2 = <&ts_release>;
-		himax,panel-coords = <0 1080 0 2160>;
-		himax,display-coords = <0 1080 0 2160>;
-		himax,irq-gpio = <&tlmm 88 0x00>;
-		himax,rst-gpio = <&tlmm 87 0x00>;
-		report_type = <1>;
-	};
-};

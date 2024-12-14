@@ -670,11 +670,9 @@ static int arm_lpae_map_sg(struct io_pgtable_ops *ops, unsigned long iova,
 				arm_lpae_iopte *ptep = ms.pgtable +
 					ARM_LPAE_LVL_IDX(iova, MAP_STATE_LVL,
 							 data);
-				ret = arm_lpae_init_pte(
+				arm_lpae_init_pte(
 					data, iova, phys, prot, MAP_STATE_LVL,
 					ptep, ms.prev_pgtable, false);
-				if (ret)
-					goto out_err;
 				ms.num_pte++;
 			} else {
 				ret = __arm_lpae_map(data, iova, phys, pgsize,
@@ -803,12 +801,13 @@ static int arm_lpae_split_blk_unmap(struct arm_lpae_io_pgtable *data,
 			return 0;
 
 		tablep = iopte_deref(pte, data);
-	} else if (unmap_idx >= 0) {
-		io_pgtable_tlb_add_flush(&data->iop, iova, size, size, true);
-		return size;
 	}
 
-	return __arm_lpae_unmap(data, iova, size, lvl, tablep);
+	if (unmap_idx < 0)
+		return __arm_lpae_unmap(data, iova, size, lvl, tablep);
+
+	io_pgtable_tlb_add_flush(&data->iop, iova, size, size, true);
+	return size;
 }
 
 static int __arm_lpae_unmap(struct arm_lpae_io_pgtable *data,

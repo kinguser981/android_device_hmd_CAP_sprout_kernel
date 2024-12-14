@@ -28,9 +28,17 @@ enum dp_drv_state {
 	PM_SUSPEND,
 };
 
+struct dp_mst_hpd_info {
+	bool mst_protocol;
+	bool mst_hpd_sim;
+	u32 mst_port_cnt;
+	u8 *edid;
+};
+
 struct dp_mst_drm_cbs {
-	void (*hpd)(void *display, bool hpd_status);
-	void (*hpd_irq)(void *display);
+	void (*hpd)(void *display, bool hpd_status,
+			struct dp_mst_hpd_info *info);
+	void (*hpd_irq)(void *display, struct dp_mst_hpd_info *info);
 	void (*set_drv_state)(void *dp_display,
 			enum dp_drv_state mst_state);
 };
@@ -72,7 +80,6 @@ struct dp_display {
 	u32 max_vdisplay;
 	u32 no_mst_encoder;
 	void *dp_mst_prv_info;
-	bool is_bootsplash_en;
 
 	int (*enable)(struct dp_display *dp_display, void *panel);
 	int (*post_enable)(struct dp_display *dp_display, void *panel);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -960,25 +960,12 @@ static int icnss_driver_event_server_arrive(void *data)
 	int ret = 0;
 	bool ignore_assert = false;
 
-	if (!penv) {
-		kfree(data);
+	if (!penv)
 		return -ENODEV;
-	}
-
-	if (test_bit(ICNSS_MODEM_SHUTDOWN, &penv->state)) {
-		icnss_pr_dbg("WLFW server arrive: Modem is down");
-		kfree(data);
-		return -EINVAL;
-	}
 
 	set_bit(ICNSS_WLFW_EXISTS, &penv->state);
 	clear_bit(ICNSS_FW_DOWN, &penv->state);
 	icnss_ignore_fw_timeout(false);
-
-	if (test_bit(ICNSS_WLFW_CONNECTED, &penv->state)) {
-		icnss_pr_err("QMI Server already in Connected State\n");
-		ICNSS_ASSERT(0);
-	}
 
 	ret = icnss_connect_to_fw_server(penv, data);
 	if (ret)
@@ -1143,7 +1130,7 @@ out:
 
 static int icnss_pd_restart_complete(struct icnss_priv *priv)
 {
-	int ret = 0;
+	int ret;
 
 	icnss_pm_relax(priv);
 
@@ -1184,6 +1171,7 @@ static int icnss_pd_restart_complete(struct icnss_priv *priv)
 		goto out_power_off;
 	}
 
+out:
 	icnss_block_shutdown(false);
 	clear_bit(ICNSS_SHUTDOWN_DONE, &penv->state);
 	return 0;
@@ -1194,7 +1182,6 @@ call_probe:
 out_power_off:
 	icnss_hw_power_off(priv);
 
-out:
 	return ret;
 }
 
@@ -1592,19 +1579,13 @@ static int icnss_modem_notifier_nb(struct notifier_block *nb,
 			icnss_pr_err("Not able to Collect msa0 segment dump, Apps permissions not assigned %d\n",
 				     ret);
 		}
-		clear_bit(ICNSS_MODEM_SHUTDOWN, &priv->state);
 		return NOTIFY_OK;
 	}
-
-	if (code == SUBSYS_AFTER_SHUTDOWN)
-		clear_bit(ICNSS_MODEM_SHUTDOWN, &priv->state);
 
 	if (code != SUBSYS_BEFORE_SHUTDOWN)
 		return NOTIFY_OK;
 
 	priv->is_ssr = true;
-
-	set_bit(ICNSS_MODEM_SHUTDOWN, &priv->state);
 
 	if (notif->crashed)
 		set_bit(ICNSS_MODEM_CRASHED, &priv->state);
@@ -2651,7 +2632,6 @@ static int icnss_smmu_init(struct icnss_priv *priv)
 	int s1_bypass = 1;
 	int fast = 1;
 	int stall_disable = 1;
-	int non_fatal_faults = 1;
 	int ret = 0;
 
 	icnss_pr_dbg("Initializing SMMU\n");
@@ -2705,16 +2685,6 @@ static int icnss_smmu_init(struct icnss_priv *priv)
 			goto set_attr_fail;
 		}
 		icnss_pr_dbg("SMMU STALL DISABLE map set\n");
-
-		ret = iommu_domain_set_attr(mapping->domain,
-					    DOMAIN_ATTR_NON_FATAL_FAULTS,
-					    &non_fatal_faults);
-		if (ret) {
-			icnss_pr_err("Failed to set SMMU non_fatal_faults attribute, err = %d\n",
-				    ret);
-			goto set_attr_fail;
-		}
-		icnss_pr_dbg("SMMU NON FATAL map set\n");
 	}
 
 	ret = arm_iommu_attach_device(&priv->pdev->dev, mapping);
@@ -3172,9 +3142,6 @@ static int icnss_stats_show_state(struct seq_file *s, struct icnss_priv *priv)
 			continue;
 		case ICNSS_MODEM_CRASHED:
 			seq_puts(s, "MODEM CRASHED");
-			continue;
-		case ICNSS_MODEM_SHUTDOWN:
-			seq_puts(s, "MODEM SHUTDOWN");
 		}
 
 		seq_printf(s, "UNKNOWN-%d", i);

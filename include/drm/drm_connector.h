@@ -657,12 +657,6 @@ struct drm_connector_funcs {
 
 /* mode specified on the command line */
 struct drm_cmdline_mode {
-	/**
-	 * @name:
-	 *
-	 * Name of the mode.
-	 */
-	char name[DRM_DISPLAY_MODE_LEN];
 	bool specified;
 	bool refresh_specified;
 	bool bpp_specified;
@@ -950,7 +944,6 @@ int drm_connector_init(struct drm_device *dev,
 		       struct drm_connector *connector,
 		       const struct drm_connector_funcs *funcs,
 		       int connector_type);
-void drm_connector_attach_edid_property(struct drm_connector *connector);
 int drm_connector_register(struct drm_connector *connector);
 void drm_connector_unregister(struct drm_connector *connector);
 int drm_mode_connector_attach_encoder(struct drm_connector *connector,
@@ -1108,18 +1101,5 @@ void drm_connector_list_iter_end(struct drm_connector_list_iter *iter);
  */
 #define drm_for_each_connector_iter(connector, iter) \
 	while ((connector = drm_connector_list_iter_next(iter)))
-
-/**
- * drm_connector_for_each_possible_encoder - iterate connector's possible encoders
- * @connector: &struct drm_connector pointer
- * @encoder: &struct drm_encoder pointer used as cursor
- * @__i: int iteration cursor, for macro-internal use
- */
-#define drm_connector_for_each_possible_encoder(connector, encoder, __i) \
-	for ((__i) = 0; (__i) < ARRAY_SIZE((connector)->encoder_ids) && \
-		     (connector)->encoder_ids[(__i)] != 0; (__i)++) \
-		for_each_if((encoder) = \
-			    drm_encoder_find((connector)->dev, NULL, \
-					     (connector)->encoder_ids[(__i)])) \
 
 #endif

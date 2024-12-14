@@ -101,8 +101,6 @@ extern "C" {
 
 #define  DRM_MODE_FLAG_SUPPORTS_RGB		(1<<23)
 #define  DRM_MODE_FLAG_SUPPORTS_YUV		(1<<24)
-#define  DRM_MODE_FLAG_VID_MODE_PANEL		(1<<29)
-#define  DRM_MODE_FLAG_CMD_MODE_PANEL		(1<<30)
 #define  DRM_MODE_FLAG_SEAMLESS			(1<<31)
 
 /* DPMS flags */
@@ -322,7 +320,6 @@ enum drm_mode_subconnector {
 #define DRM_MODE_CONNECTOR_VIRTUAL      15
 #define DRM_MODE_CONNECTOR_DSI		16
 #define DRM_MODE_CONNECTOR_DPI		17
-#define DRM_MODE_CONNECTOR_WRITEBACK	18
 
 struct drm_mode_get_connector {
 

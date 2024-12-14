@@ -25,6 +25,8 @@
 #include <linux/pwm.h>
 #include <linux/regmap.h>
 #include <linux/types.h>
+#include <linux/slab.h>
+
 
 #define TRILED_REG_TYPE			0x04
 #define TRILED_REG_SUBTYPE		0x05
@@ -83,6 +85,11 @@ struct qpnp_tri_led_chip {
 	u8			bitmap;
 };
 
+//add begin by wufengfeng 20191209 for leds duty_pcts
+static u64 dutp_pcts[20];
+static struct pwm_output_pattern *output_pattern = NULL;
+//add end by wufengfeng 20191209 for leds duty_pcts
+
 static int qpnp_tri_led_read(struct qpnp_tri_led_chip *chip, u16 addr, u8 *val)
 {
 	int rc;
@@ -127,7 +134,7 @@ static int __tri_led_config_pwm(struct qpnp_led_dev *led,
 	pstate.output_type = led->led_setting.breath ?
 		PWM_OUTPUT_MODULATED : PWM_OUTPUT_FIXED;
 	/* Use default pattern in PWM device */
-	pstate.output_pattern = NULL;
+	pstate.output_pattern = output_pattern; //add by wufengfeng 20191209 for leds duty_pcts, default NULL
 	rc = pwm_apply_state(led->pwm_dev, &pstate);
 
 	if (rc < 0)
@@ -397,11 +404,90 @@ unlock:
 	return (rc < 0) ? rc : count;
 }
 
+//add begin by wufengfeng 20191209 for leds duty_pcts
+static ssize_t duty_pcts_show(struct device *dev, struct device_attribute *attr,
+							char *buf)
+{
+	int i = 0;
+	char temp[512] = {0};
+	//struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	//struct qpnp_led_dev *led =
+	//	container_of(led_cdev, struct qpnp_led_dev, cdev);
+
+	for (i = 0; i < 20; i++) {
+		snprintf(temp, PAGE_SIZE, "%s,%d", temp, dutp_pcts[i]);
+	}
+
+	return snprintf(buf, PAGE_SIZE, "%s\n",  temp);
+}
+
+
+static ssize_t duty_pcts_store(struct device *dev,
+	struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	int max_duty_pcts = 20;
+	int num_duty_pcts = 0;
+	int value;
+	int i = 0;
+	int rc;
+	char *buffer;
+	ssize_t ret;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	struct qpnp_led_dev *led =
+		container_of(led_cdev, struct qpnp_led_dev, cdev);
+
+	mutex_lock(&led->lock);
+	buffer = (char *)buf;
+	for (i = 0; i < max_duty_pcts; i++) {
+		if (buffer == NULL)
+			break;
+		ret = sscanf((const char *)buffer, "%u,%s", &value, buffer);
+		dutp_pcts[i]=value;
+		num_duty_pcts++;
+		if (ret <= 1)
+			break;
+	}
+
+	if (num_duty_pcts != max_duty_pcts) {
+		dev_err(led->chip->dev,
+			"Number of duty pcts given exceeds max (%d)\n",
+			max_duty_pcts);
+		goto unlock;
+	}
+
+	if(output_pattern){
+		kfree(output_pattern);
+		output_pattern = NULL;
+	}
+	output_pattern = kzalloc(sizeof(struct pwm_output_pattern), GFP_KERNEL);
+	output_pattern->duty_pattern = (u64*)dutp_pcts;
+	output_pattern->num_entries = 20;
+	output_pattern->cycles_per_duty = 200;
+
+	led->led_setting.blink = false;
+	led->led_setting.breath = true;
+	led->led_setting.brightness = LED_FULL;
+	rc = qpnp_tri_led_set(led);
+
+	unlock:
+	mutex_unlock(&led->lock);
+	return count;
+}
+//add end by wufengfeng 20191209 for leds duty_pcts
+
 static DEVICE_ATTR(breath, 0644, breath_show, breath_store);
+static DEVICE_ATTR(duty_pcts, 0644, duty_pcts_show, duty_pcts_store);
 static const struct attribute *breath_attrs[] = {
 	&dev_attr_breath.attr,
 	NULL
 };
+
+static const struct attribute *duty_pcts_attrs[] = {
+	&dev_attr_duty_pcts.attr,
+	NULL
+};
+
 
 static int qpnp_tri_led_register(struct qpnp_tri_led_chip *chip)
 {
@@ -436,6 +522,13 @@ static int qpnp_tri_led_register(struct qpnp_tri_led_chip *chip)
 						led->label, rc);
 				goto err_out;
 			}
+			rc = sysfs_create_files(&led->cdev.dev->kobj,
+					duty_pcts_attrs);
+			if (rc < 0) {
+				dev_err(chip->dev, "Create duty_pcts file for %s led failed, rc=%d\n",
+						led->label, rc);
+				goto err_out;
+			}
 		}
 	}
 
@@ -446,6 +539,7 @@ err_out:
 		if (j < i)
 			sysfs_remove_files(&chip->leds[j].cdev.dev->kobj,
 					breath_attrs);
+			sysfs_remove_files(&chip->leds[j].cdev.dev->kobj,duty_pcts_attrs);
 		mutex_destroy(&chip->leds[j].lock);
 	}
 	return rc;
@@ -625,6 +719,7 @@ static int qpnp_tri_led_remove(struct platform_device *pdev)
 	mutex_destroy(&chip->bus_lock);
 	for (i = 0; i < chip->num_leds; i++) {
 		sysfs_remove_files(&chip->leds[i].cdev.dev->kobj, breath_attrs);
+		sysfs_remove_files(&chip->leds[i].cdev.dev->kobj, duty_pcts_attrs);
 		mutex_destroy(&chip->leds[i].lock);
 	}
 	dev_set_drvdata(chip->dev, NULL);

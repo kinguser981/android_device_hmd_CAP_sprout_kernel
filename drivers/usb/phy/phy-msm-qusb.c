@@ -881,6 +881,13 @@ static int qusb_phy_dpdm_regulator_enable(struct regulator_dev *rdev)
 	dev_dbg(qphy->phy.dev, "%s dpdm_enable:%d\n",
 				__func__, qphy->dpdm_enable);
 
+	/*Add by xukai. For CAP-691. 20191224*/
+	 if (qphy->phy.flags & PHY_HOST_MODE) {
+		dev_err(qphy->phy.dev, "%s: host mode active\n", __func__);
+		return -EINVAL;
+	 }
+	/*Add by xukai. For CAP-691. 20191224*/
+
 	mutex_lock(&qphy->phy_lock);
 	if (!qphy->dpdm_enable) {
 		ret = qusb_phy_enable_power(qphy, true);
@@ -1113,14 +1120,15 @@ static int qusb_phy_probe(struct platform_device *pdev)
 		ret = of_property_read_u32(dev->of_node, "qcom,usb-hs-ac-value",
 						&qphy->usb_hs_ac_value);
 		if (ret) {
-			dev_err(dev, "usb_hs_ac_value not passed\n");
+			dev_err(dev, "usb_hs_ac_value not passed\n", __func__);
 			return ret;
 		}
 
 		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 						"tcsr_conn_box_spare_0");
 		if (!res) {
-			dev_err(dev, "tcsr_conn_box_spare_0 not passed\n");
+			dev_err(dev, "tcsr_conn_box_spare_0 not passed\n",
+								__func__);
 			return -ENOENT;
 		}
 
@@ -1165,8 +1173,8 @@ static int qusb_phy_probe(struct platform_device *pdev)
 		if (IS_ERR(qphy->iface_clk)) {
 			ret = PTR_ERR(qphy->iface_clk);
 			qphy->iface_clk = NULL;
-			if (ret == -EPROBE_DEFER)
-				return ret;
+		if (ret == -EPROBE_DEFER)
+			return ret;
 			dev_err(dev, "couldn't get iface_clk(%d)\n", ret);
 		}
 	}

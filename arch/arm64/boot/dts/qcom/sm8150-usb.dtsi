@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -120,7 +120,7 @@
 
 			qcom,pipe0 {
 				label = "ssusb-qdss-in-0";
-				qcom,usb-bam-mem-type = <1>;
+				qcom,usb-bam-mem-type = <2>;
 				qcom,dir = <1>;
 				qcom,pipe-num = <0>;
 				qcom,peer-bam = <0>;
@@ -418,11 +418,10 @@
 			snps,disable-clk-gating;
 			snps,has-lpm-erratum;
 			snps,hird-threshold = /bits/ 8 <0x10>;
-			snps,ssp-u3-u0-quirk;
-			snps,usb3-u1u2-disable;
+			snps,usb3_lpm_capable;
 			usb-core-id = <1>;
 			tx-fifo-resize;
-			maximum-speed = "super-speed-plus";
+			maximum-speed = "super-speed";
 			dr_mode = "otg";
 		};
 	};

@@ -32,6 +32,165 @@ static struct v4l2_file_operations msm_eeprom_v4l2_subdev_fops;
  *
  * Returns size after computation size, returns error in case of error
  */
+ static struct msm_camera_i2c_reg_array gc2375h_init_otp_array[] = {
+	{0xfe, 0x00, 1},
+	{0xfe, 0x00, 1},
+	{0xfe, 0x00, 1},
+	{0xf7, 0x01, 1},
+	{0xf8, 0x0c, 1},
+	{0xf9, 0x42, 1},
+	{0xfa, 0x88, 1},
+	{0xfc, 0x9e, 1},
+	{0xd4, 0x81, 1},
+};
+
+
+static struct msm_camera_i2c_reg_array gc2375h_otp_to_norm_mode_array[] = {
+	{0xd4, 0x00, 1},
+	{0xfc, 0x8e, 1},
+	{0xfe, 0x00, 1},	
+};
+
+static int custom_gc2375h_define_otp_read(struct msm_eeprom_ctrl_t *e_ctrl,
+	struct msm_eeprom_memory_map_t *emap, uint8_t *memptr) {
+	int m = 0;
+	int rc =0;
+	uint16_t data = 0;
+	uint16_t  read_addr=0;
+		
+	pr_err("%s: gc2375 otp read init \n", __func__);
+
+		
+	for (m = 0; m < sizeof(gc2375h_init_otp_array) / sizeof(gc2375h_init_otp_array[0]); m++){
+		e_ctrl->i2c_client.addr_type = emap->mem.addr_t;
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),
+				gc2375h_init_otp_array[m].reg_addr, gc2375h_init_otp_array[m].reg_data, MSM_CAMERA_I2C_BYTE_DATA);
+		mdelay(gc2375h_init_otp_array[m].delay);
+		if (rc < 0) {
+			pr_err("%s: gc2375 to otp mode  failed\n", __func__);
+			return rc;
+		}
+	}
+
+	e_ctrl->i2c_client.addr_type = emap->mem.addr_t;		
+  	for(m = 0; m < emap->mem.valid_size;m++){		
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),0xd5, read_addr, MSM_CAMERA_I2C_BYTE_DATA);
+		mdelay(1);
+		if (rc < 0) {
+			pr_err("%s: gc2375 to otp read  failed1\n", __func__);
+			return rc;
+		}
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),0xf3, 0x20, MSM_CAMERA_I2C_BYTE_DATA);
+		mdelay(1);
+		if (rc < 0) {
+			pr_err("%s: gc2375 to otp read  failed2\n", __func__);
+			return rc;
+		}
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0xd7,&data, MSM_CAMERA_I2C_BYTE_DATA);
+		memptr[m] = data;
+		if (rc < 0) {
+			pr_err("%s: read failed\n", __func__);
+			return rc;
+		}
+		read_addr=read_addr+8;
+  	}
+		
+	for (m = 0; m < sizeof(gc2375h_otp_to_norm_mode_array)/sizeof(gc2375h_otp_to_norm_mode_array[0]); m++){
+		e_ctrl->i2c_client.addr_type = emap->mem.addr_t;
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),
+				gc2375h_otp_to_norm_mode_array[m].reg_addr, gc2375h_otp_to_norm_mode_array[m].reg_data, MSM_CAMERA_I2C_BYTE_DATA);
+		if (rc < 0) {
+			pr_err("%s: to normal  failed\n", __func__);
+			return rc;
+		}
+	}
+	
+	return rc;
+}
+
+
+ static struct msm_camera_i2c_reg_array gc02m1_init_otp_array[] = {
+	{ 0xfc,  0x01, 1 },
+	{ 0xf4,  0x41, 1 },
+	{ 0xf5,  0xc0, 1 },
+	{ 0xf6,  0x44, 1 },
+	{ 0xf8,  0x38, 1 },
+	{ 0xf9,  0x82, 1 },
+	{ 0xfa,  0x00, 1 },
+	{ 0xfd,  0x80, 1 },
+	{ 0xfc,  0x81, 1 },
+	{ 0xf7,  0x01, 1 },
+	{ 0xfc,  0x80, 1 },
+	{ 0xfc,  0x80, 1 },
+	{ 0xfc,  0x80, 1 },
+	{ 0xfc,  0x8e, 1 },
+	{ 0xf3,  0x30, 1 },
+	{ 0xfe,  0x02, 1 },
+};
+
+
+static struct msm_camera_i2c_reg_array gc02m1_otp_to_norm_mode_array[] = {
+	{ 0xf7, 0x00, 1 },
+	{ 0xf9, 0x83, 1 },
+};
+
+static int custom_gc02m1_define_otp_read(struct msm_eeprom_ctrl_t *e_ctrl,
+	struct msm_eeprom_memory_map_t *emap, uint8_t *memptr) {
+	int m = 0;
+	int rc =0;
+	uint16_t data = 0;
+	uint16_t  read_addr=0x78;
+		
+	pr_err("%s: gc02m1 otp read init \n", __func__);
+
+		
+	for (m = 0; m < sizeof(gc02m1_init_otp_array) / sizeof(gc02m1_init_otp_array[0]); m++){
+		e_ctrl->i2c_client.addr_type = emap->mem.addr_t;
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),
+				gc02m1_init_otp_array[m].reg_addr, gc02m1_init_otp_array[m].reg_data, MSM_CAMERA_I2C_BYTE_DATA);
+		mdelay(gc02m1_init_otp_array[m].delay);
+		if (rc < 0) {
+			pr_err("%s: gc02m1 to otp mode  failed\n", __func__);
+			return rc;
+		}
+	}
+
+	e_ctrl->i2c_client.addr_type = emap->mem.addr_t;		
+  	for(m = 0; m < emap->mem.valid_size;m++){		
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),0x17, read_addr, MSM_CAMERA_I2C_BYTE_DATA);
+		mdelay(1);
+		if (rc < 0) {
+			pr_err("%s: gc02m1 to otp read  failed1\n", __func__);
+			return rc;
+		}
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),0xf3, 0x34, MSM_CAMERA_I2C_BYTE_DATA);
+		mdelay(1);
+		if (rc < 0) {
+			pr_err("%s: gc02m1 to otp read  failed2\n", __func__);
+			return rc;
+		}
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0x19,&data, MSM_CAMERA_I2C_BYTE_DATA);
+		memptr[m] = data;
+		if (rc < 0) {
+			pr_err("%s: read failed\n", __func__);
+			return rc;
+		}
+		read_addr=read_addr+8;
+  	}
+		
+	for (m = 0; m < sizeof(gc02m1_otp_to_norm_mode_array)/sizeof(gc02m1_otp_to_norm_mode_array[0]); m++){
+		e_ctrl->i2c_client.addr_type = emap->mem.addr_t;
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),
+				gc02m1_otp_to_norm_mode_array[m].reg_addr, gc02m1_otp_to_norm_mode_array[m].reg_data, MSM_CAMERA_I2C_BYTE_DATA);
+		if (rc < 0) {
+			pr_err("%s: to normal  failed\n", __func__);
+			return rc;
+		}
+	}
+	
+	return rc;
+}
+
 static int msm_get_read_mem_size
 	(struct msm_eeprom_memory_map_array *eeprom_map_array)
 {
@@ -204,13 +363,24 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 		}
 
 		if (emap[j].mem.valid_size) {
-			e_ctrl->i2c_client.addr_type = emap[j].mem.addr_t;
-			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read_seq(
-				&(e_ctrl->i2c_client), emap[j].mem.addr,
-				memptr, emap[j].mem.valid_size);
-			if (rc < 0) {
-				pr_err("%s: read failed\n", __func__);
-				return rc;
+			if((strcmp(eb_info->eeprom_name,"captain_gc2375h_macro_lhyx_i")==0)){
+				rc = custom_gc2375h_define_otp_read(e_ctrl,&emap[j],memptr);
+				pr_err("%s:captain_gc2375h_macro_lhyx_i eeprom rc=%d \n",__func__,rc);
+			}
+			else if((strcmp(eb_info->eeprom_name,"captain_gc02m1_macro_jk_ii")==0)){
+				rc = custom_gc02m1_define_otp_read(e_ctrl,&emap[j],memptr);
+				pr_err("%s:captain_gc02m1_macro_jk_ii eeprom rc=%d \n",__func__,rc);
+			}
+			else
+			{			
+				e_ctrl->i2c_client.addr_type = emap[j].mem.addr_t;
+				rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read_seq(
+					&(e_ctrl->i2c_client), emap[j].mem.addr,
+					memptr, emap[j].mem.valid_size);
+				if (rc < 0) {
+					pr_err("%s: read failed\n", __func__);
+					return rc;
+				}
 			}
 			memptr += emap[j].mem.valid_size;
 		}
@@ -663,7 +833,8 @@ static int msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 		if (e_ctrl->userspace_probe == 0) {
 			pr_err("%s:%d Eeprom already probed at kernel boot",
 				__func__, __LINE__);
-			rc = -EINVAL;
+//			rc = -EINVAL;
+			rc = 0; //tom han eeprom power config in dtsi
 			break;
 		}
 		if (e_ctrl->cal_data.num_data == 0) {
@@ -1575,7 +1746,7 @@ static int eeprom_init_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 	if (rc < 0) {
 		pr_err("%s:%d memory map parse failed\n",
 			__func__, __LINE__);
-		goto free_mem;
+//ugrec_tky		goto free_mem;
 	}
 
 	rc = msm_camera_power_down(power_info,
@@ -1636,7 +1807,8 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 		if (e_ctrl->userspace_probe == 0) {
 			pr_err("%s:%d Eeprom already probed at kernel boot",
 				__func__, __LINE__);
-			rc = -EINVAL;
+//			rc = -EINVAL;
+			rc = 0; //tom han eeprom power config in dtsi
 			break;
 		}
 		if (e_ctrl->cal_data.num_data == 0) {
@@ -1837,7 +2009,7 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 		}
 		for (j = 0; j < e_ctrl->cal_data.num_data; j++)
 			CDBG("memory_data[%d] = 0x%X\n", j,
-				e_ctrl->cal_data.mapdata[j]);
+				e_ctrl->cal_data.mapdata[j]); //tom han close log of otp value
 
 		e_ctrl->is_supported |= msm_eeprom_match_crc(&e_ctrl->cal_data);
 

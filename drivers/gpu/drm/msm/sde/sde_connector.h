@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -430,6 +430,7 @@ struct sde_connector {
 	struct backlight_device *bl_device;
 	struct delayed_work status_work;
 	u32 esd_status_interval;
+	int status_err_count;
 	bool panel_dead;
 	bool esd_status_check;
 
@@ -808,12 +809,10 @@ static inline bool sde_connector_needs_offset(struct drm_connector *connector)
  * @state: Pointer to drm_connector_state struct
  * @cfg: Pointer to pointer to dither cfg
  * @len: length of the dither data
- * @idle_pc: flag to indicate idle_pc_restore happened
  * Returns: Zero on success
  */
 int sde_connector_get_dither_cfg(struct drm_connector *conn,
-		struct drm_connector_state *state, void **cfg,
-		size_t *len, bool idle_pc);
+		struct drm_connector_state *state, void **cfg, size_t *len);
 
 /**
  * sde_connector_set_blob_data - set connector blob property data

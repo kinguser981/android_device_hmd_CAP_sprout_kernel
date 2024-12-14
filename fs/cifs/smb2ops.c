@@ -1755,12 +1755,6 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
 	inode = d_inode(cfile->dentry);
 	cifsi = CIFS_I(inode);
 
-	/*
-	 * We zero the range through ioctl, so we need remove the page caches
-	 * first, otherwise the data may be inconsistent with the server.
-	 */
-	truncate_pagecache_range(inode, offset, offset + len - 1);
-
 	/* if file not oplocked can't be sure whether asking to extend size */
 	if (!CIFS_CACHE_READ(cifsi))
 		if (keep_size == false) {
@@ -1829,12 +1823,6 @@ static long smb3_punch_hole(struct file *file, struct cifs_tcon *tcon,
 		free_xid(xid);
 		return rc;
 	}
-
-	/*
-	 * We implement the punch hole through ioctl, so we need remove the page
-	 * caches first, otherwise the data may be inconsistent with the server.
-	 */
-	truncate_pagecache_range(inode, offset, offset + len - 1);
 
 	cifs_dbg(FYI, "offset %lld len %lld", offset, len);
 
@@ -1981,33 +1969,26 @@ smb21_set_oplock_level(struct cifsInodeInfo *cinode, __u32 oplock,
 		       unsigned int epoch, bool *purge_cache)
 {
 	char message[5] = {0};
-	unsigned int new_oplock = 0;
 
 	oplock &= 0xFF;
 	if (oplock == SMB2_OPLOCK_LEVEL_NOCHANGE)
 		return;
 
-	/* Check if the server granted an oplock rather than a lease */
-	if (oplock & SMB2_OPLOCK_LEVEL_EXCLUSIVE)
-		return smb2_set_oplock_level(cinode, oplock, epoch,
-					     purge_cache);
-
+	cinode->oplock = 0;
 	if (oplock & SMB2_LEASE_READ_CACHING_HE) {
-		new_oplock |= CIFS_CACHE_READ_FLG;
+		cinode->oplock |= CIFS_CACHE_READ_FLG;
 		strcat(message, "R");
 	}
 	if (oplock & SMB2_LEASE_HANDLE_CACHING_HE) {
-		new_oplock |= CIFS_CACHE_HANDLE_FLG;
+		cinode->oplock |= CIFS_CACHE_HANDLE_FLG;
 		strcat(message, "H");
 	}
 	if (oplock & SMB2_LEASE_WRITE_CACHING_HE) {
-		new_oplock |= CIFS_CACHE_WRITE_FLG;
+		cinode->oplock |= CIFS_CACHE_WRITE_FLG;
 		strcat(message, "W");
 	}
-	if (!new_oplock)
-		strncpy(message, "None", sizeof(message));
-
-	cinode->oplock = new_oplock;
+	if (!cinode->oplock)
+		strcat(message, "None");
 	cifs_dbg(FYI, "%s Lease granted on inode %p\n", message,
 		 &cinode->vfs_inode);
 }
@@ -2185,15 +2166,7 @@ fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, struct smb_rqst *old_rq)
 static inline void smb2_sg_set_buf(struct scatterlist *sg, const void *buf,
 				   unsigned int buflen)
 {
-	void *addr;
-	/*
-	 * VMAP_STACK (at least) puts stack into the vmalloc address space
-	 */
-	if (is_vmalloc_addr(buf))
-		addr = vmalloc_to_page(buf);
-	else
-		addr = virt_to_page(buf);
-	sg_set_page(sg, addr, buflen, offset_in_page(buf));
+	sg_set_page(sg, virt_to_page(buf), buflen, offset_in_page(buf));
 }
 
 static struct scatterlist *

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -96,9 +96,7 @@ struct pil_tz_data {
 	int proxy_clk_count;
 	int smem_id;
 	void *ramdump_dev;
-#ifdef CONFIG_QCOM_MINIDUMP
 	void *minidump_dev;
-#endif
 	u32 pas_id;
 	u32 bus_client;
 	bool enable_bus_scaling;
@@ -424,12 +422,6 @@ static int piltz_resc_init(struct platform_device *pdev, struct pil_tz_data *d)
 	return 0;
 }
 
-static void piltz_resc_destroy(struct pil_tz_data *d)
-{
-	if (d->bus_client)
-		msm_bus_scale_unregister_client(d->bus_client);
-}
-
 static int enable_regulators(struct pil_tz_data *d, struct device *dev,
 				struct reg_info *regs, int reg_count,
 				bool reg_no_enable)
@@ -599,10 +591,6 @@ static int pil_init_image_trusted(struct pil_desc *pil,
 		const u8 *metadata, size_t size)
 {
 	struct pil_tz_data *d = desc_to_data(pil);
-	struct pas_init_image_req {
-		u32	proc;
-		u32	image_addr;
-	} request;
 	u32 scm_ret = 0;
 	void *mdata_buf;
 	dma_addr_t mdata_phys;
@@ -631,19 +619,13 @@ static int pil_init_image_trusted(struct pil_desc *pil,
 	}
 
 	memcpy(mdata_buf, metadata, size);
-	if (!is_scm_armv8()) {
-		request.proc = d->pas_id;
-		request.image_addr = mdata_phys;
-		ret = scm_call(SCM_SVC_PIL, PAS_INIT_IMAGE_CMD, &request,
-			sizeof(request), &scm_ret, sizeof(scm_ret));
-	} else {
-		desc.args[0] = d->pas_id;
-		desc.args[1] = mdata_phys;
-		desc.arginfo = SCM_ARGS(2, SCM_VAL, SCM_RW);
-		ret = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL, PAS_INIT_IMAGE_CMD),
-				&desc);
-		scm_ret = desc.ret[0];
-	}
+
+	desc.args[0] = d->pas_id;
+	desc.args[1] = mdata_phys;
+	desc.arginfo = SCM_ARGS(2, SCM_VAL, SCM_RW);
+	ret = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL, PAS_INIT_IMAGE_CMD),
+			&desc);
+	scm_ret = desc.ret[0];
 
 	dma_free_attrs(&dev, size, mdata_buf, mdata_phys, attrs);
 	scm_pas_disable_bw();
@@ -656,11 +638,6 @@ static int pil_mem_setup_trusted(struct pil_desc *pil, phys_addr_t addr,
 			       size_t size)
 {
 	struct pil_tz_data *d = desc_to_data(pil);
-	struct pas_init_image_req {
-		u32	proc;
-		u32	start_addr;
-		u32	len;
-	} request;
 	u32 scm_ret = 0;
 	int ret;
 	struct scm_desc desc = {0};
@@ -668,21 +645,12 @@ static int pil_mem_setup_trusted(struct pil_desc *pil, phys_addr_t addr,
 	if (d->subsys_desc.no_auth)
 		return 0;
 
-	if (!is_scm_armv8()) {
-		request.proc = d->pas_id;
-		request.start_addr = addr;
-		request.len = size;
-		ret = scm_call(SCM_SVC_PIL, PAS_MEM_SETUP_CMD, &request,
-				sizeof(request), &scm_ret, sizeof(scm_ret));
-	} else {
-		desc.args[0] = d->pas_id;
-		desc.args[1] = addr;
-		desc.args[2] = size;
-		desc.arginfo = SCM_ARGS(3);
-		ret = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL, PAS_MEM_SETUP_CMD),
-				&desc);
-		scm_ret = desc.ret[0];
-	}
+	desc.args[0] = d->pas_id;
+	desc.args[1] = addr;
+	desc.args[2] = size;
+	desc.arginfo = SCM_ARGS(3);
+	ret = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL, PAS_MEM_SETUP_CMD),
+			&desc);
 	scm_ret = desc.ret[0];
 
 	if (ret)
@@ -715,15 +683,9 @@ static int pil_auth_and_reset(struct pil_desc *pil)
 	if (rc)
 		goto err_clks;
 
-
-	if (!is_scm_armv8()) {
-		rc = scm_call(SCM_SVC_PIL, PAS_AUTH_AND_RESET_CMD, &proc,
-				sizeof(proc), &scm_ret, sizeof(scm_ret));
-	} else {
-		rc = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL,
-				PAS_AUTH_AND_RESET_CMD), &desc);
-		scm_ret = desc.ret[0];
-	}
+	rc = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL,
+		       PAS_AUTH_AND_RESET_CMD), &desc);
+	scm_ret = desc.ret[0];
 
 	scm_pas_disable_bw();
 	if (rc)
@@ -772,15 +734,9 @@ static int pil_shutdown_trusted(struct pil_desc *pil)
 	if (rc)
 		goto err_clks;
 
-
-	if (!is_scm_armv8()) {
-		rc = scm_call(SCM_SVC_PIL, PAS_SHUTDOWN_CMD, &proc,
-				sizeof(proc), &scm_ret, sizeof(scm_ret));
-	} else {
-		rc = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL, PAS_SHUTDOWN_CMD),
-			       &desc);
-		scm_ret = desc.ret[0];
-	}
+	rc = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL, PAS_SHUTDOWN_CMD),
+		       &desc);
+	scm_ret = desc.ret[0];
 
 	disable_unprepare_clocks(d->proxy_clks, d->proxy_clk_count);
 	disable_regulators(d, d->proxy_regs, d->proxy_reg_count, false);
@@ -822,14 +778,9 @@ static int pil_deinit_image_trusted(struct pil_desc *pil)
 	desc.args[0] = proc = d->pas_id;
 	desc.arginfo = SCM_ARGS(1);
 
-	if (!is_scm_armv8()) {
-		rc = scm_call(SCM_SVC_PIL, PAS_SHUTDOWN_CMD, &proc,
-			      sizeof(proc), &scm_ret, sizeof(scm_ret));
-	} else {
-		rc = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL, PAS_SHUTDOWN_CMD),
-				&desc);
-		scm_ret = desc.ret[0];
-	}
+	rc = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL, PAS_SHUTDOWN_CMD),
+			       &desc);
+	scm_ret = desc.ret[0];
 
 	if (rc)
 		return rc;
@@ -914,11 +865,7 @@ static int subsys_ramdump(int enable, const struct subsys_desc *subsys)
 	if (!enable)
 		return 0;
 
-#ifdef CONFIG_QCOM_MINIDUMP
 	return pil_do_ramdump(&d->desc, d->ramdump_dev, d->minidump_dev);
-#else
-	return pil_do_ramdump(&d->desc, d->ramdump_dev, NULL);
-#endif
 }
 
 static void subsys_free_memory(const struct subsys_desc *subsys)
@@ -1088,9 +1035,7 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 	struct device_node *crypto_node;
 	u32 proxy_timeout, crypto_id;
 	int len, rc;
-#ifdef CONFIG_QCOM_MINIDUMP
 	char md_node[20];
-#endif
 
 	d = devm_kzalloc(&pdev->dev, sizeof(*d), GFP_KERNEL);
 	if (!d)
@@ -1159,7 +1104,7 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 
 	rc = pil_desc_init(&d->desc);
 	if (rc)
-		goto err_descinit;
+		return rc;
 
 	init_completion(&d->stop_ack);
 
@@ -1263,7 +1208,6 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 		goto err_ramdump;
 	}
 
-#ifdef CONFIG_QCOM_MINIDUMP
 	scnprintf(md_node, sizeof(md_node), "md_%s", d->subsys_desc.name);
 
 	d->minidump_dev = create_ramdump_device(md_node, &pdev->dev);
@@ -1273,7 +1217,7 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 		rc = -ENOMEM;
 		goto err_minidump;
 	}
-#endif
+
 	d->subsys = subsys_register(&d->subsys_desc);
 	if (IS_ERR(d->subsys)) {
 		rc = PTR_ERR(d->subsys);
@@ -1282,16 +1226,12 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 
 	return 0;
 err_subsys:
-#ifdef CONFIG_QCOM_MINIDUMP
 	destroy_ramdump_device(d->minidump_dev);
 err_minidump:
-#endif
 	destroy_ramdump_device(d->ramdump_dev);
 err_ramdump:
 	pil_desc_release(&d->desc);
 	platform_set_drvdata(pdev, NULL);
-err_descinit:
-	piltz_resc_destroy(d);
 
 	return rc;
 }
@@ -1302,9 +1242,7 @@ static int pil_tz_driver_exit(struct platform_device *pdev)
 
 	subsys_unregister(d->subsys);
 	destroy_ramdump_device(d->ramdump_dev);
-#ifdef CONFIG_QCOM_MINIDUMP
 	destroy_ramdump_device(d->minidump_dev);
-#endif
 	pil_desc_release(&d->desc);
 
 	return 0;

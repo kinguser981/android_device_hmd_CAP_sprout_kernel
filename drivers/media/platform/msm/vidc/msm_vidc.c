@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -521,15 +521,6 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 		return -EINVAL;
 	}
 
-	q = msm_comm_get_vb2q(inst, b->type);
-	if (!q) {
-		dprintk(VIDC_ERR,
-		"Failed to find buffer queue for type = %d\n", b->type);
-			return -EINVAL;
-	}
-	mutex_lock(&q->lock);
-
-
 	for (i = 0; i < b->length; i++) {
 		b->m.planes[i].m.fd = b->m.planes[i].reserved[0];
 		b->m.planes[i].data_offset = b->m.planes[i].reserved[1];
@@ -554,11 +545,19 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 	tag_data.output_tag = b->m.planes[0].reserved[6];
 	msm_comm_store_tags(inst, &tag_data);
 
+	q = msm_comm_get_vb2q(inst, b->type);
+	if (!q) {
+		dprintk(VIDC_ERR,
+			"Failed to find buffer queue for type = %d\n", b->type);
+		return -EINVAL;
+	}
+
+	mutex_lock(&q->lock);
 	rc = vb2_qbuf(&q->vb2_bufq, b);
+	mutex_unlock(&q->lock);
 	if (rc)
 		dprintk(VIDC_ERR, "Failed to qbuf, %d\n", rc);
 
-	mutex_unlock(&q->lock);
 	return rc;
 }
 EXPORT_SYMBOL(msm_vidc_qbuf);
@@ -1083,7 +1082,6 @@ static inline int start_streaming(struct msm_vidc_inst *inst)
 	int rc = 0;
 	struct hfi_device *hdev;
 	struct hal_buffer_size_minimum b;
-	struct hal_buffer_requirements *bufreq;
 	u32 rc_mode;
 	int value = 0;
 
@@ -1162,13 +1160,6 @@ static inline int start_streaming(struct msm_vidc_inst *inst)
 		goto fail_start;
 	}
 
-	if (inst->session_type == MSM_VIDC_DECODER &&
-		!inst->operating_rate_set && !is_realtime_session(inst)) {
-		inst->clk_data.turbo_mode = true;
-		dprintk(VIDC_INFO,
-			"inst(%pK) setting turbo mode ");
-	}
-
 	/* Assign Core and LP mode for current session */
 	rc = msm_vidc_decide_core_and_power_mode(inst);
 	if (rc) {
@@ -1197,27 +1188,6 @@ static inline int start_streaming(struct msm_vidc_inst *inst)
 		dprintk(VIDC_ERR,
 			"This session has mis-match buffer counts%pK\n", inst);
 		goto fail_start;
-	}
-
-	if (inst->session_type == MSM_VIDC_DECODER &&
-		msm_comm_get_stream_output_mode(inst) ==
-			HAL_VIDEO_DECODER_SECONDARY) {
-		bufreq = get_buff_req_buffer(inst,
-			HAL_BUFFER_OUTPUT);
-		if (!bufreq) {
-			dprintk(VIDC_ERR, "Buffer requirements failed\n");
-			goto fail_start;
-		}
-		/* For DPB buffers, Always use min count */
-		rc = msm_comm_set_buffer_count(inst,
-			bufreq->buffer_count_min,
-			bufreq->buffer_count_min,
-			HAL_BUFFER_OUTPUT);
-		if (rc) {
-			dprintk(VIDC_ERR,
-			"failed to set buffer count\n");
-			goto fail_start;
-		}
 	}
 
 	rc = msm_comm_set_scratch_buffers(inst);
@@ -1257,8 +1227,6 @@ static inline int start_streaming(struct msm_vidc_inst *inst)
 	dprintk(VIDC_DBG, "%s: batching %s for inst %pK (%#x)\n",
 		__func__, inst->batch.enable ? "enabled" : "disabled",
 		inst, hash32_ptr(inst->session));
-
-	msm_dcvs_try_enable(inst);
 
 	/*
 	 * For seq_changed_insufficient, driver should set session_continue
@@ -1684,7 +1652,6 @@ static int msm_vidc_op_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	int rc = 0, c = 0;
 	struct msm_vidc_inst *inst;
-	const char *ctrl_name = NULL;
 
 	if (!ctrl) {
 		dprintk(VIDC_ERR, "%s invalid parameters for ctrl\n", __func__);
@@ -1708,12 +1675,9 @@ static int msm_vidc_op_s_ctrl(struct v4l2_ctrl *ctrl)
 			}
 		}
 	}
-	if (rc) {
-		ctrl_name = v4l2_ctrl_get_name(ctrl->id);
+	if (rc)
 		dprintk(VIDC_ERR, "Failed setting control: Inst = %pK (%s)\n",
-			inst, ctrl_name ? ctrl_name : "Invalid ctrl");
-	}
-
+				inst, v4l2_ctrl_get_name(ctrl->id));
 	return rc;
 }
 static int try_get_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
@@ -1909,6 +1873,7 @@ void *msm_vidc_open(int core_id, int session_type)
 	mutex_init(&inst->bufq[CAPTURE_PORT].lock);
 	mutex_init(&inst->bufq[OUTPUT_PORT].lock);
 	mutex_init(&inst->lock);
+	mutex_init(&inst->flush_lock);
 
 	INIT_MSM_VIDC_LIST(&inst->scratchbufs);
 	INIT_MSM_VIDC_LIST(&inst->freqs);
@@ -1934,7 +1899,6 @@ void *msm_vidc_open(int core_id, int session_type)
 	inst->clk_data.ddr_bw = 0;
 	inst->clk_data.sys_cache_bw = 0;
 	inst->clk_data.bitrate = 0;
-	inst->operating_rate_set = false;
 	inst->clk_data.work_route = 1;
 	inst->clk_data.core_id = VIDC_CORE_ID_DEFAULT;
 	inst->bit_depth = MSM_VIDC_BIT_DEPTH_8;
@@ -1992,6 +1956,7 @@ void *msm_vidc_open(int core_id, int session_type)
 		goto fail_init;
 	}
 
+	msm_dcvs_try_enable(inst);
 	if (msm_comm_check_for_inst_overload(core)) {
 		dprintk(VIDC_ERR,
 			"Instance count reached Max limit, rejecting session");
@@ -2033,6 +1998,7 @@ fail_bufq_capture:
 	mutex_destroy(&inst->bufq[CAPTURE_PORT].lock);
 	mutex_destroy(&inst->bufq[OUTPUT_PORT].lock);
 	mutex_destroy(&inst->lock);
+	mutex_destroy(&inst->flush_lock);
 
 	DEINIT_MSM_VIDC_LIST(&inst->scratchbufs);
 	DEINIT_MSM_VIDC_LIST(&inst->persistbufs);
@@ -2186,6 +2152,7 @@ int msm_vidc_destroy(struct msm_vidc_inst *inst)
 	mutex_destroy(&inst->bufq[CAPTURE_PORT].lock);
 	mutex_destroy(&inst->bufq[OUTPUT_PORT].lock);
 	mutex_destroy(&inst->lock);
+	mutex_destroy(&inst->flush_lock);
 
 	msm_vidc_debugfs_deinit_inst(inst);
 

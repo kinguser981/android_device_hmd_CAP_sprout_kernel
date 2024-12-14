@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,7 +13,7 @@
 #include "ipa_i.h"
 #include "ipahal/ipahal.h"
 
-static const u32 ipa_hdr_bin_sz[IPA_HDR_BIN_MAX] = { 8, 16, 24, 36, 64, 128};
+static const u32 ipa_hdr_bin_sz[IPA_HDR_BIN_MAX] = { 8, 16, 24, 36, 64};
 static const u32 ipa_hdr_proc_ctx_bin_sz[IPA_HDR_PROC_CTX_BIN_MAX] = { 32, 64};
 
 #define HDR_TYPE_IS_VALID(type) \
@@ -98,15 +98,6 @@ static int ipa3_hdr_proc_ctx_to_hw_format(struct ipa_mem_buffer *mem,
 					0 : 1;
 			}
 		}
-		/* Check the pointer and header length to avoid
-		 *	dangerous overflow in HW
-		 */
-		if (unlikely(!entry->hdr || !entry->hdr->offset_entry ||
-				!entry->offset_entry ||
-				entry->hdr->hdr_len == 0 ||
-				entry->hdr->hdr_len >
-				ipa_hdr_bin_sz[IPA_HDR_BIN_MAX - 1]))
-			return -EINVAL;
 
 		ret = ipahal_cp_proc_ctx_to_hw_buff(entry->type, mem->base,
 				entry->offset_entry->offset,
@@ -177,7 +168,7 @@ alloc:
  */
 int __ipa_commit_hdr_v3_0(void)
 {
-	struct ipa3_desc desc[3];
+	struct ipa3_desc desc[2];
 	struct ipa_mem_buffer hdr_mem;
 	struct ipa_mem_buffer ctx_mem;
 	struct ipa_mem_buffer aligned_ctx_mem;
@@ -187,17 +178,12 @@ int __ipa_commit_hdr_v3_0(void)
 	struct ipahal_imm_cmd_hdr_init_system hdr_init_cmd = {0};
 	struct ipahal_imm_cmd_pyld *hdr_cmd_pyld = NULL;
 	struct ipahal_imm_cmd_pyld *ctx_cmd_pyld = NULL;
-	struct ipahal_imm_cmd_pyld *coal_cmd_pyld = NULL;
 	int rc = -EFAULT;
-	int i;
-	int num_cmd = 0;
 	u32 proc_ctx_size;
 	u32 proc_ctx_ofst;
 	u32 proc_ctx_size_ddr;
-	struct ipahal_imm_cmd_register_write reg_write_coal_close;
-	struct ipahal_reg_valmask valmask;
 
-	memset(desc, 0, 3 * sizeof(struct ipa3_desc));
+	memset(desc, 0, 2 * sizeof(struct ipa3_desc));
 
 	if (ipa3_generate_hdr_hw_tbl(&hdr_mem)) {
 		IPAERR("fail to generate HDR HW TBL\n");
@@ -208,27 +194,6 @@ int __ipa_commit_hdr_v3_0(void)
 	    &aligned_ctx_mem)) {
 		IPAERR("fail to generate HDR PROC CTX HW TBL\n");
 		goto end;
-	}
-
-	/* IC to close the coal frame before HPS Clear if coal is enabled */
-	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1) {
-		i = ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS);
-		reg_write_coal_close.skip_pipeline_clear = false;
-		reg_write_coal_close.pipeline_clear_options = IPAHAL_HPS_CLEAR;
-		reg_write_coal_close.offset = ipahal_get_reg_ofst(
-			IPA_AGGR_FORCE_CLOSE);
-		ipahal_get_aggr_force_close_valmask(i, &valmask);
-		reg_write_coal_close.value = valmask.val;
-		reg_write_coal_close.value_mask = valmask.mask;
-		coal_cmd_pyld = ipahal_construct_imm_cmd(
-			IPA_IMM_CMD_REGISTER_WRITE,
-			&reg_write_coal_close, false);
-		if (!coal_cmd_pyld) {
-			IPAERR("failed to construct coal close IC\n");
-			goto end;
-		}
-		ipa3_init_imm_cmd_desc(&desc[num_cmd], coal_cmd_pyld);
-		++num_cmd;
 	}
 
 	if (ipa3_ctx->hdr_tbl_lcl) {
@@ -269,8 +234,7 @@ int __ipa_commit_hdr_v3_0(void)
 			}
 		}
 	}
-	ipa3_init_imm_cmd_desc(&desc[num_cmd], hdr_cmd_pyld);
-	++num_cmd;
+	ipa3_init_imm_cmd_desc(&desc[0], hdr_cmd_pyld);
 	IPA_DUMP_BUFF(hdr_mem.base, hdr_mem.phys_base, hdr_mem.size);
 
 	proc_ctx_size = IPA_MEM_PART(apps_hdr_proc_ctx_size);
@@ -324,11 +288,10 @@ int __ipa_commit_hdr_v3_0(void)
 			}
 		}
 	}
-	ipa3_init_imm_cmd_desc(&desc[num_cmd], ctx_cmd_pyld);
-	++num_cmd;
+	ipa3_init_imm_cmd_desc(&desc[1], ctx_cmd_pyld);
 	IPA_DUMP_BUFF(ctx_mem.base, ctx_mem.phys_base, ctx_mem.size);
 
-	if (ipa3_send_cmd(num_cmd, desc))
+	if (ipa3_send_cmd(2, desc))
 		IPAERR("fail to send immediate command\n");
 	else
 		rc = 0;
@@ -362,9 +325,6 @@ int __ipa_commit_hdr_v3_0(void)
 	}
 
 end:
-	if (coal_cmd_pyld)
-		ipahal_destroy_imm_cmd(coal_cmd_pyld);
-
 	if (ctx_cmd_pyld)
 		ipahal_destroy_imm_cmd(ctx_cmd_pyld);
 
@@ -554,10 +514,6 @@ static int __ipa_add_hdr(struct ipa_hdr_add *hdr, bool user)
 		bin = IPA_HDR_BIN3;
 	else if (hdr->hdr_len <= ipa_hdr_bin_sz[IPA_HDR_BIN4])
 		bin = IPA_HDR_BIN4;
-	/* Starting from IPA4.5, HW supports larger headers. */
-	else if ((hdr->hdr_len <= ipa_hdr_bin_sz[IPA_HDR_BIN5]) &&
-		(ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5))
-		bin = IPA_HDR_BIN5;
 	else {
 		IPAERR_RL("unexpected hdr len %d\n", hdr->hdr_len);
 		goto bad_hdr_len;
@@ -768,7 +724,7 @@ int __ipa3_del_hdr(u32 hdr_hdl, bool by_user)
 		return 0;
 	}
 
-	if (entry->is_hdr_proc_ctx || entry->proc_ctx) {
+	if (entry->is_hdr_proc_ctx) {
 		dma_unmap_single(ipa3_ctx->pdev,
 			entry->phys_base,
 			entry->hdr_len,
@@ -1097,7 +1053,6 @@ int ipa3_reset_hdr(bool user_only)
 
 		if (ipa3_id_find(entry->id) == NULL) {
 			mutex_unlock(&ipa3_ctx->lock);
-			IPAERR_RL("Invalid header ID\n");
 			WARN_ON_RATELIMIT_IPA(1);
 			return -EFAULT;
 		}
@@ -1108,7 +1063,6 @@ int ipa3_reset_hdr(bool user_only)
 					entry->phys_base,
 					entry->hdr_len,
 					DMA_TO_DEVICE);
-				entry->proc_ctx->hdr = NULL;
 				entry->proc_ctx = NULL;
 			} else {
 				/* move the offset entry to free list */
@@ -1166,7 +1120,6 @@ int ipa3_reset_hdr(bool user_only)
 
 		if (ipa3_id_find(ctx_entry->id) == NULL) {
 			mutex_unlock(&ipa3_ctx->lock);
-			IPAERR_RL("Invalid proc header ID\n");
 			WARN_ON_RATELIMIT_IPA(1);
 			return -EFAULT;
 		}

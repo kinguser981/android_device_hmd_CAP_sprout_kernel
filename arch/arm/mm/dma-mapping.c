@@ -143,7 +143,6 @@ static pgprot_t __get_dma_pgprot(unsigned long attrs, pgprot_t prot,
 	return prot;
 }
 
-#ifdef CONFIG_ARM_DMA_USE_IOMMU
 static bool is_dma_coherent(struct device *dev, unsigned long attrs,
 			    bool is_coherent)
 {
@@ -156,7 +155,6 @@ static bool is_dma_coherent(struct device *dev, unsigned long attrs,
 
 	return is_coherent;
 }
-#endif
 
 /**
  * arm_dma_map_page - map a portion of a page for streaming DMA
@@ -1992,10 +1990,7 @@ int arm_iommu_map_sg(struct device *dev, struct scatterlist *sg,
 
 	for_each_sg(sg, s, nents, i) {
 		s->dma_address = iova + current_offset;
-		if (i == 0)
-			s->dma_length = total_length;
-		else
-			s->dma_length = 0;
+		s->dma_length = total_length - current_offset;
 		current_offset += s->length;
 	}
 
@@ -2500,8 +2495,10 @@ static int arm_iommu_init_mapping(struct device *dev,
 	u64 size = mapping->bits << PAGE_SHIFT;
 	int is_fast = 0;
 
-	if (mapping->init)
+	if (mapping->init) {
+		kref_get(&mapping->kref);
 		return 0;
+	}
 
 	/* currently only 32-bit DMA address space is supported */
 	if (size > DMA_BIT_MASK(32) + 1) {

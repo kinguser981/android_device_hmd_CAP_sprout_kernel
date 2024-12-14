@@ -23,7 +23,7 @@
 	status = "disabled";
 };
 
-&cdc_dmic01_gpios {
+/*&cdc_dmic01_gpios {
 	status = "disabled";
 };
 
@@ -37,7 +37,7 @@
 
 &clock_audio_wsa_2 {
 	status = "disabled";
-};
+};*/	//removed by wenhuilong @20191021 for M528 audio bringup
 
 &clock_audio_va {
 	status = "disabled";
@@ -59,9 +59,9 @@
 	status = "disabled";
 };
 
-&wsa_spkr_en1 {
+/*&wsa_spkr_en1 {
 	status = "disabled";
-};
+};*/	//removed by wenhuilong @20191021 for M528 audio bringup
 
 &rx_swr_gpios {
 	status = "disabled";

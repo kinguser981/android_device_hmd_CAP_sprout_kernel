@@ -1,5 +1,4 @@
-/* Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+/* Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,7 +19,6 @@
 #include <linux/input.h>
 #include <linux/io.h>
 #include <soc/qcom/scm.h>
-#include <soc/qcom/boot_stats.h>
 
 #include <linux/msm-bus-board.h>
 #include <linux/msm-bus.h>
@@ -106,7 +104,9 @@ static struct adreno_device device_3d0 = {
 	.long_ib_detect = 1,
 	.input_work = __WORK_INITIALIZER(device_3d0.input_work,
 		adreno_input_work),
-	.pwrctrl_flag = BIT(ADRENO_HWCG_CTRL) | BIT(ADRENO_THROTTLING_CTRL),
+	.pwrctrl_flag = BIT(ADRENO_SPTP_PC_CTRL) | BIT(ADRENO_PPD_CTRL) |
+		BIT(ADRENO_LM_CTRL) | BIT(ADRENO_HWCG_CTRL) |
+		BIT(ADRENO_THROTTLING_CTRL),
 	.profile.enabled = false,
 	.active_list = LIST_HEAD_INIT(device_3d0.active_list),
 	.active_list_lock = __SPIN_LOCK_UNLOCKED(device_3d0.active_list_lock),
@@ -1337,8 +1337,6 @@ static int adreno_probe(struct platform_device *pdev)
 	struct adreno_device *adreno_dev;
 	int status;
 
-	place_marker("M - DRIVER GPU Init");
-
 	adreno_dev = adreno_get_dev(pdev);
 
 	if (adreno_dev == NULL) {
@@ -1446,8 +1444,6 @@ static int adreno_probe(struct platform_device *pdev)
 	adreno_debugfs_init(adreno_dev);
 	adreno_profile_init(adreno_dev);
 
-	adreno_dev->perfcounter = false;
-
 	adreno_sysfs_init(adreno_dev);
 
 	kgsl_pwrscale_init(&pdev->dev, CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR);
@@ -1485,8 +1481,6 @@ static int adreno_probe(struct platform_device *pdev)
 		}
 	}
 #endif
-
-	place_marker("M - DRIVER GPU Ready");
 out:
 	if (status) {
 		adreno_ringbuffer_close(adreno_dev);
@@ -1700,8 +1694,6 @@ static int adreno_init(struct kgsl_device *device)
 	if (test_bit(ADRENO_DEVICE_INITIALIZED, &adreno_dev->priv))
 		return 0;
 
-	place_marker("M - DRIVER ADRENO Init");
-
 	/*
 	 * Either the microcode read failed because the usermodehelper isn't
 	 * available or the microcode was corrupted. Fail the init and force
@@ -1775,8 +1767,6 @@ static int adreno_init(struct kgsl_device *device)
 
 	}
 
-	place_marker("M - DRIVER ADRENO Ready");
-
 	return 0;
 }
 
@@ -1817,10 +1807,10 @@ static void _set_secvid(struct kgsl_device *device)
 		adreno_writereg64(adreno_dev,
 			ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_BASE,
 			ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_BASE_HI,
-			device->mmu.secure_base);
+			KGSL_IOMMU_SECURE_BASE(&device->mmu));
 		adreno_writereg(adreno_dev,
 			ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_SIZE,
-			device->mmu.secure_size);
+			KGSL_IOMMU_SECURE_SIZE);
 		if (ADRENO_QUIRK(adreno_dev, ADRENO_QUIRK_SECVID_SET_ONCE))
 			set = true;
 	}
@@ -1941,14 +1931,6 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 
 	/* Clear any GPU faults that might have been left over */
 	adreno_clear_gpu_fault(adreno_dev);
-
-	/*
-	 * Keep high bus vote to reduce AHB latency
-	 * during FW loading and wakeup.
-	 */
-	if (device->pwrctrl.ahbpath_pcl)
-		msm_bus_scale_client_update_request(device->pwrctrl.ahbpath_pcl,
-			KGSL_AHB_PATH_HIGH);
 
 	/* Put the GPU in a responsive state */
 	status = kgsl_pwrctrl_change_state(device, KGSL_STATE_AWARE);
@@ -2211,15 +2193,6 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 			gmu_dev_ops->oob_clear(adreno_dev, oob_boot_slumber);
 	}
 
-	/*
-	 * Low vote is enough after wakeup completes, this will make
-	 * sure CPU to GPU AHB infrastructure clocks are running at-least
-	 * at minimum frequency.
-	 */
-	if (device->pwrctrl.ahbpath_pcl)
-		msm_bus_scale_client_update_request(device->pwrctrl.ahbpath_pcl,
-			KGSL_AHB_PATH_LOW);
-
 	return 0;
 
 error_oob_clear:
@@ -2242,9 +2215,6 @@ error_pwr_off:
 		pm_qos_update_request(&device->pwrctrl.pm_qos_req_dma,
 				pmqos_active_vote);
 
-	if (device->pwrctrl.ahbpath_pcl)
-		msm_bus_scale_client_update_request(device->pwrctrl.ahbpath_pcl,
-			KGSL_AHB_PATH_OFF);
 	return status;
 }
 
@@ -2364,10 +2334,6 @@ static int adreno_stop(struct kgsl_device *device)
 	 */
 	adreno_set_active_ctxs_null(adreno_dev);
 
-	if (device->pwrctrl.ahbpath_pcl)
-		msm_bus_scale_client_update_request(device->pwrctrl.ahbpath_pcl,
-			KGSL_AHB_PATH_OFF);
-
 	clear_bit(ADRENO_DEVICE_STARTED, &adreno_dev->priv);
 
 	return error;
@@ -2423,14 +2389,6 @@ int adreno_reset(struct kgsl_device *device, int fault)
 		}
 	}
 	if (ret) {
-		unsigned long flags = device->pwrctrl.ctrl_flags;
-
-		/*
-		 * Clear ctrl_flags to ensure clocks and regulators are
-		 * turned off
-		 */
-		device->pwrctrl.ctrl_flags = 0;
-
 		/* If soft reset failed/skipped, then pull the power */
 		kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
 		/* since device is officially off now clear start bit */
@@ -2448,8 +2406,6 @@ int adreno_reset(struct kgsl_device *device, int fault)
 					break;
 			}
 		}
-
-		device->pwrctrl.ctrl_flags = flags;
 	}
 	if (ret)
 		return ret;
@@ -2822,32 +2778,6 @@ static int adreno_getproperty(struct kgsl_device *device,
 
 		if (copy_to_user(value, &gaming_bin,
 					sizeof(unsigned int))) {
-			status = -EFAULT;
-			break;
-		}
-		status = 0;
-	}
-	break;
-
-	case KGSL_PROP_MACROTILING_CHANNELS:
-	{
-		unsigned int channel;
-
-		if (sizebytes < sizeof(unsigned int)) {
-			status = -EINVAL;
-			break;
-		}
-
-		if (of_property_read_u32(device->pdev->dev.of_node,
-			"qcom,macrotiling-channels", &channel)) {
-			/* return error when not set in device tree
-			 * and let user decide.
-			 */
-			status = -EINVAL;
-			break;
-		}
-
-		if (copy_to_user(value, &channel, sizeof(channel))) {
 			status = -EFAULT;
 			break;
 		}
@@ -4191,19 +4121,6 @@ static int adreno_resume_device(struct kgsl_device *device,
 	return 0;
 }
 
-u32 adreno_get_ucode_version(const u32 *data)
-{
-	u32 version;
-
-	version = data[1];
-
-	if ((version & 0xf) != 0xa)
-		return version;
-
-	version &= ~0xfff;
-	return  version | ((data[3] & 0xfff000) >> 12);
-}
-
 static const struct kgsl_functable adreno_functable = {
 	/* Mandatory functions */
 	.regread = adreno_regread,
@@ -4293,7 +4210,7 @@ static struct platform_driver kgsl_bus_platform_driver = {
 	}
 };
 
-static int __kgsl_3d_init(void *arg)
+static int __init kgsl_3d_init(void)
 {
 	int ret;
 
@@ -4306,21 +4223,6 @@ static int __kgsl_3d_init(void *arg)
 		platform_driver_unregister(&kgsl_bus_platform_driver);
 
 	return ret;
-}
-
-static int __init kgsl_3d_init(void)
-{
-#ifdef CONFIG_PLATFORM_AUTO
-	struct task_struct *kgsl_3d_init_task =
-		kthread_run(__kgsl_3d_init, NULL, "kgsl_3d_init");
-	if (IS_ERR(kgsl_3d_init_task))
-		return PTR_ERR(kgsl_3d_init_task);
-	else
-		return 0;
-#else
-	__kgsl_3d_init(NULL);
-	return 0;
-#endif
 }
 
 static void __exit kgsl_3d_exit(void)

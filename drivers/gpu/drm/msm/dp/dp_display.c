@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,7 +23,6 @@
 #include <linux/extcon.h>
 #include <linux/soc/qcom/fsa4480-i2c.h>
 
-#include <drm/drm_client.h>
 #include "sde_connector.h"
 
 #include "msm_drv.h"
@@ -81,7 +80,6 @@ struct dp_display_private {
 	struct platform_device *pdev;
 	struct usbpd *pd;
 	struct device_node *aux_switch_node;
-	struct msm_dp_aux_bridge *aux_bridge;
 	struct dentry *root;
 	struct completion notification_comp;
 
@@ -126,12 +124,6 @@ static const struct of_device_id dp_dt_match[] = {
 	{.compatible = "qcom,dp-display"},
 	{}
 };
-
-static void dp_display_update_hdcp_info(struct dp_display_private *dp);
-static bool dp_display_framework_ready(struct dp_display_private *dp)
-{
-	return dp->dp_display.post_open ? false : true;
-}
 
 static inline bool dp_display_is_hdcp_enabled(struct dp_display_private *dp)
 {
@@ -348,13 +340,6 @@ static void dp_display_hdcp_cb_work(struct work_struct *work)
 	u8 sink_status = 0;
 
 	dp = container_of(dw, struct dp_display_private, hdcp_cb_work);
-
-	dp_display_update_hdcp_info(dp);
-
-	if (!dp_display_is_hdcp_enabled(dp))
-		return;
-
-	dp->link->hdcp_status.hdcp_state = HDCP_STATE_AUTHENTICATING;
 
 	if (!dp->power_on || !dp->is_connected || atomic_read(&dp->aborted) ||
 			dp->hdcp_abort)
@@ -641,36 +626,6 @@ static void dp_display_send_hpd_event(struct dp_display_private *dp)
 			envp);
 }
 
-static void dp_display_post_open(struct dp_display *dp_display)
-{
-	struct drm_connector *connector;
-	struct dp_display_private *dp;
-
-	if (!dp_display) {
-		pr_err("invalid input\n");
-		return;
-	}
-
-	dp = container_of(dp_display, struct dp_display_private, dp_display);
-	if (IS_ERR_OR_NULL(dp)) {
-		pr_err("invalid params\n");
-		return;
-	}
-
-	connector = dp->dp_display.base_connector;
-
-	if (!connector) {
-		pr_err("connector not set\n");
-		return;
-	}
-
-	/* if cable is already connected, send notification */
-	if (dp->hpd->hpd_high)
-		queue_work(dp->wq, &dp->connect_work);
-	else
-		dp_display->post_open = NULL;
-}
-
 static int dp_display_send_hpd_notification(struct dp_display_private *dp)
 {
 	int ret = 0;
@@ -682,15 +637,6 @@ static int dp_display_send_hpd_notification(struct dp_display_private *dp)
 		dp->dp_display.is_sst_connected = hpd;
 	else
 		dp->dp_display.is_sst_connected = false;
-
-	if (!dp_display_framework_ready(dp)) {
-		pr_debug("%s: dp display framework not ready\n", __func__);
-		if (!dp->dp_display.is_bootsplash_en) {
-			dp->dp_display.is_bootsplash_en = true;
-			drm_client_dev_register(dp->dp_display.drm_dev);
-		}
-		return ret;
-	}
 
 	reinit_completion(&dp->notification_comp);
 	dp_display_send_hpd_event(dp);
@@ -726,6 +672,7 @@ static void dp_display_process_mst_hpd_high(struct dp_display_private *dp,
 						bool mst_probe)
 {
 	bool is_mst_receiver;
+	struct dp_mst_hpd_info info;
 	const int clear_mstm_ctrl_timeout = 100000;
 	u8 old_mstm_ctrl;
 	int ret;
@@ -768,8 +715,12 @@ static void dp_display_process_mst_hpd_high(struct dp_display_private *dp,
 
 		dp_display_update_mst_state(dp, true);
 	} else if (dp->mst.mst_active && mst_probe) {
+		info.mst_protocol = dp->parser->has_mst_sideband;
+		info.mst_port_cnt = dp->debug->mst_port_cnt;
+		info.edid = dp->debug->get_edid(dp->debug);
+
 		if (dp->mst.cbs.hpd)
-			dp->mst.cbs.hpd(&dp->dp_display, true);
+			dp->mst.cbs.hpd(&dp->dp_display, true, &info);
 	}
 
 	DP_MST_DEBUG("mst_hpd_high. mst_active:%d\n", dp->mst.mst_active);
@@ -887,12 +838,15 @@ end:
 
 static void dp_display_process_mst_hpd_low(struct dp_display_private *dp)
 {
+	struct dp_mst_hpd_info info = {0};
+
 	if (dp->mst.mst_active) {
 		DP_MST_DEBUG("mst_hpd_low work\n");
 
-		if (dp->mst.cbs.hpd)
-			dp->mst.cbs.hpd(&dp->dp_display, false);
-
+		if (dp->mst.cbs.hpd) {
+			info.mst_protocol = dp->parser->has_mst_sideband;
+			dp->mst.cbs.hpd(&dp->dp_display, false, &info);
+		}
 		dp_display_update_mst_state(dp, false);
 	}
 
@@ -1147,8 +1101,13 @@ static int dp_display_stream_enable(struct dp_display_private *dp,
 
 static void dp_display_mst_attention(struct dp_display_private *dp)
 {
-	if (dp->mst.mst_active && dp->mst.cbs.hpd_irq)
-		dp->mst.cbs.hpd_irq(&dp->dp_display);
+	struct dp_mst_hpd_info hpd_irq = {0};
+
+	if (dp->mst.mst_active && dp->mst.cbs.hpd_irq) {
+		hpd_irq.mst_hpd_sim = dp->debug->mst_hpd_sim;
+		dp->mst.cbs.hpd_irq(&dp->dp_display, &hpd_irq);
+		dp->debug->mst_hpd_sim = false;
+	}
 
 	DP_MST_DEBUG("mst_attention_work. mst_active:%d\n", dp->mst.mst_active);
 }
@@ -1257,11 +1216,6 @@ static void dp_display_connect_work(struct work_struct *work)
 	int rc = 0;
 	struct dp_display_private *dp = container_of(work,
 			struct dp_display_private, connect_work);
-
-	if (dp->dp_display.is_sst_connected && dp_display_framework_ready(dp)) {
-		pr_debug("HPD already on\n");
-		return;
-	}
 
 	if (atomic_read(&dp->aborted)) {
 		pr_warn("HPD off requested\n");
@@ -1387,7 +1341,7 @@ static int dp_init_sub_modules(struct dp_display_private *dp)
 	}
 
 	dp->aux = dp_aux_get(dev, &dp->catalog->aux, dp->parser,
-			dp->aux_switch_node, dp->aux_bridge);
+			dp->aux_switch_node);
 	if (IS_ERR(dp->aux)) {
 		rc = PTR_ERR(dp->aux);
 		pr_err("failed to initialize aux, rc = %d\n", rc);
@@ -1455,8 +1409,7 @@ static int dp_init_sub_modules(struct dp_display_private *dp)
 	cb->disconnect = dp_display_usbpd_disconnect_cb;
 	cb->attention  = dp_display_usbpd_attention_cb;
 
-	dp->hpd = dp_hpd_get(dev, dp->parser, &dp->catalog->hpd, dp->pd,
-			dp->aux_bridge, cb);
+	dp->hpd = dp_hpd_get(dev, dp->parser, &dp->catalog->hpd, dp->pd, cb);
 	if (IS_ERR(dp->hpd)) {
 		rc = PTR_ERR(dp->hpd);
 		pr_err("failed to initialize hpd, rc = %d\n", rc);
@@ -1511,7 +1464,6 @@ error_ctrl:
 error_panel:
 	dp_link_put(dp->link);
 error_link:
-	dp->aux->drm_aux_deregister(dp->aux);
 	dp_aux_put(dp->aux);
 error_aux:
 	dp_power_put(dp->power);
@@ -2007,11 +1959,6 @@ static enum drm_mode_status dp_display_validate_mode(
 	int hdis, vdis, vref, ar, _hdis, _vdis, _vref, _ar, rate;
 	struct dp_display_mode dp_mode;
 	bool dsc_en;
-	u32 pclk_khz;
-	struct msm_drm_private *priv;
-	struct sde_kms *sde_kms;
-	u32 num_lm = 0;
-	int rc = 0;
 
 	if (!dp_display || !mode || !panel) {
 		pr_err("invalid params\n");
@@ -2050,22 +1997,9 @@ static enum drm_mode_status dp_display_validate_mode(
 		goto end;
 	}
 
-	pclk_khz = dp_mode.timing.widebus_en ?
-		(dp_mode.timing.pixel_clk_khz >> 1) :
-		(dp_mode.timing.pixel_clk_khz);
-
-	if (pclk_khz > dp_display->max_pclk_khz) {
-		DP_MST_DEBUG("clk:%d, max:%d\n", pclk_khz,
+	if (mode->clock > dp_display->max_pclk_khz) {
+		DP_MST_DEBUG("clk:%d, max:%d\n", mode->clock,
 				dp_display->max_pclk_khz);
-		goto end;
-	}
-
-	priv = dp_display->drm_dev->dev_private;
-	sde_kms = to_sde_kms(priv->kms);
-	rc = msm_get_mixer_count(dp->priv, mode,
-			sde_kms->catalog->max_mixer_width, &num_lm);
-	if (rc) {
-		DP_MST_DEBUG("error getting mixer count. rc:%d\n", rc);
 		goto end;
 	}
 
@@ -2299,52 +2233,6 @@ static int dp_display_init_aux_switch(struct dp_display_private *dp)
 	}
 
 	fsa4480_unreg_notifier(&nb, dp->aux_switch_node);
-end:
-	return rc;
-}
-
-static int dp_display_bridge_mst_attention(void *dev, bool hpd, bool hpd_irq)
-{
-	struct dp_display_private *dp = dev;
-
-	if (!hpd_irq)
-		return -EINVAL;
-
-	dp_display_mst_attention(dp);
-
-	return 0;
-}
-
-static int dp_display_init_aux_bridge(struct dp_display_private *dp)
-{
-	int rc = 0;
-	const char *phandle = "qcom,dp-aux-bridge";
-	struct device_node *bridge_node;
-
-	if (!dp->pdev->dev.of_node) {
-		pr_err("cannot find dev.of_node\n");
-		rc = -ENODEV;
-		goto end;
-	}
-
-	bridge_node = of_parse_phandle(dp->pdev->dev.of_node,
-			phandle, 0);
-	if (!bridge_node)
-		goto end;
-
-	dp->aux_bridge = of_msm_dp_aux_find_bridge(bridge_node);
-	if (!dp->aux_bridge) {
-		pr_err("failed to find dp aux bridge\n");
-		rc = -EPROBE_DEFER;
-		goto end;
-	}
-
-	if (dp->aux_bridge->register_hpd &&
-			(dp->aux_bridge->flag & MSM_DP_AUX_BRIDGE_MST) &&
-			!(dp->aux_bridge->flag & MSM_DP_AUX_BRIDGE_HPD))
-		dp->aux_bridge->register_hpd(dp->aux_bridge,
-				dp_display_bridge_mst_attention, dp);
-
 end:
 	return rc;
 }
@@ -2816,10 +2704,6 @@ static int dp_display_probe(struct platform_device *pdev)
 		goto error;
 	}
 
-	rc = dp_display_init_aux_bridge(dp);
-	if (rc)
-		goto error;
-
 	rc = dp_display_create_workqueue(dp);
 	if (rc) {
 		pr_err("Failed to create workqueue\n");
@@ -2841,7 +2725,7 @@ static int dp_display_probe(struct platform_device *pdev)
 	g_dp_display->unprepare     = dp_display_unprepare;
 	g_dp_display->request_irq   = dp_request_irq;
 	g_dp_display->get_debug     = dp_get_debug;
-	g_dp_display->post_open     = dp_display_post_open;
+	g_dp_display->post_open     = NULL;
 	g_dp_display->post_init     = dp_display_post_init;
 	g_dp_display->config_hdr    = dp_display_config_hdr;
 	g_dp_display->mst_install   = dp_display_mst_install;
